@@ -17,6 +17,12 @@ export enum UserRole {
 
 @Entity({ name: "users" })
 export class UserEntity extends AppBaseEntity {
+	@Column({ type: "varchar", length: 150, nullable: true })
+	name?: string | null;
+
+	@Column({ type: "varchar", length: 30, nullable: true })
+	phone?: string | null;
+
 	@Column({ type: "varchar", length: 150 })
 	@Index({ unique: true })
 	email!: string;
@@ -34,24 +40,24 @@ export class UserEntity extends AppBaseEntity {
 	@Column({ name: "is_active", type: "boolean", default: true })
 	isActive!: boolean;
 
-	@OneToMany(() => RefreshTokenEntity, (refreshToken) => refreshToken.user)
+	@OneToMany(() => RefreshTokenEntity, (refreshToken: RefreshTokenEntity) => refreshToken.user)
 	refreshTokens?: RefreshTokenEntity[];
 
-	@OneToMany(() => QuotationEntity, (quotation) => quotation.customer)
+	@OneToMany(() => QuotationEntity, (quotation: QuotationEntity) => quotation.customer)
 	quotations?: QuotationEntity[];
 
-	@OneToMany(() => DocumentEntity, (document) => document.customer)
+	@OneToMany(() => DocumentEntity, (document: DocumentEntity) => document.customer)
 	documents?: DocumentEntity[];
 
-	@OneToMany(() => SubscriptionEntity, (subscription) => subscription.customer)
+	@OneToMany(() => SubscriptionEntity, (subscription: SubscriptionEntity) => subscription.customer)
 	subscriptions?: SubscriptionEntity[];
 
-	@OneToMany(() => InvoiceEntity, (invoice) => invoice.customer)
+	@OneToMany(() => InvoiceEntity, (invoice: InvoiceEntity) => invoice.customer)
 	invoices?: InvoiceEntity[];
 
-	@OneToMany(() => NotificationLogEntity, (notification) => notification.user)
+	@OneToMany(() => NotificationLogEntity, (notification: NotificationLogEntity) => notification.user)
 	notifications?: NotificationLogEntity[];
 
-	@OneToMany(() => DocumentStatusHistoryEntity, (history) => history.changedByUser)
+	@OneToMany(() => DocumentStatusHistoryEntity, (history: DocumentStatusHistoryEntity) => history.changedByUser)
 	documentStatusChanges?: DocumentStatusHistoryEntity[];
 }

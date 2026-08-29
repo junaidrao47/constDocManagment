@@ -8,7 +8,7 @@ export class RefreshTokenEntity extends AppBaseEntity {
   @Index()
   userId!: string;
 
-  @ManyToOne(() => UserEntity, { onDelete: "CASCADE" })
+  @ManyToOne(() => UserEntity, (user: UserEntity) => user.refreshTokens, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
   user?: UserEntity;
 

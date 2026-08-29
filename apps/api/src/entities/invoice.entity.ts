@@ -9,7 +9,7 @@ export class InvoiceEntity extends AppBaseEntity {
   @Index()
   customerId!: string;
 
-  @ManyToOne(() => UserEntity, { onDelete: "CASCADE" })
+  @ManyToOne(() => UserEntity, (user: UserEntity) => user.invoices, { onDelete: "CASCADE" })
   @JoinColumn({ name: "customer_id" })
   customer?: UserEntity;
 

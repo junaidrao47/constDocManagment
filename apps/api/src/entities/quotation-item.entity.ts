@@ -9,7 +9,7 @@ export class QuotationItemEntity extends AppBaseEntity {
   @Column({ name: "quotation_id", type: "uuid" })
   quotationId!: string;
 
-  @ManyToOne(() => QuotationEntity, (quotation) => quotation.items, { onDelete: "CASCADE" })
+  @ManyToOne(() => QuotationEntity, (quotation: QuotationEntity) => quotation.items, { onDelete: "CASCADE" })
   @JoinColumn({ name: "quotation_id" })
   quotation?: QuotationEntity;
 

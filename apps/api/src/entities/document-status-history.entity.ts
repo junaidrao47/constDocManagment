@@ -9,7 +9,7 @@ export class DocumentStatusHistoryEntity extends AppBaseEntity {
   @Column({ name: "document_id", type: "uuid" })
   documentId!: string;
 
-  @ManyToOne(() => DocumentEntity, (document) => document.statusHistory, { onDelete: "CASCADE" })
+  @ManyToOne(() => DocumentEntity, (document: DocumentEntity) => document.statusHistory, { onDelete: "CASCADE" })
   @JoinColumn({ name: "document_id" })
   document?: DocumentEntity;
 

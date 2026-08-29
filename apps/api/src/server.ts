@@ -1,8 +1,14 @@
 import { createApp } from "./app";
+import { initializeDatabase } from "./config/database";
+import { initializeRedis } from "./config/redis";
+import { env } from "./config/env";
 
-export function startServer() {
+export async function startServer() {
+  await initializeDatabase();
+  await initializeRedis();
+
   const app = createApp();
-  const port = Number(process.env.PORT ?? 3000);
+  const port = env.port;
 
   app.listen(port, () => {
     // Intentionally minimal startup logging.
@@ -13,5 +19,8 @@ export function startServer() {
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }

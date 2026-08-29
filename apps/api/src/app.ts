@@ -12,13 +12,16 @@ import { adminRouter } from "./modules/admin/admin.router";
 import { quotationRouter } from "./modules/quotations/quotation.router";
 import { pricingRouter } from "./modules/pricing/pricing.router";
 import { packageRouter } from "./modules/packages/package.router";
+import { userRouter } from "./modules/users/user.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
 import { errorHandler } from "./middleware/errorHandler";
+import { env } from "./config/env";
+import { Request, Response } from "express";
 
 export function createApp() {
   const app = express();
-  const allowedOrigin = process.env.CORS_ORIGIN ?? "*";
+  const allowedOrigin = env.corsOrigin ?? "*";
 
   const rateLimiter = rateLimit({
     windowMs: 60_000,
@@ -35,6 +38,7 @@ export function createApp() {
   app.use("/api", rateLimiter);
 
   app.use("/api/auth", authRouter);
+  app.use("/api/users", authenticate, userRouter);
   app.use("/api/customers", authenticate, authorize("customer"), customerRouter);
   app.use("/api/documents", authenticate, documentRouter);
   app.use("/api/quotations", quotationRouter);
@@ -42,7 +46,7 @@ export function createApp() {
   app.use("/api/packages", packageRouter);
   app.use("/api/admin", authenticate, authorize("admin", "manager"), adminRouter);
 
-  app.get("/health", (_req, res) => {
+  app.get("/health", (_req: Request, res: Response) => {
     res.json({ success: true, data: { status: "ok" }, message: "ok" });
   });
 

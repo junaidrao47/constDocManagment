@@ -1,3 +1,7 @@
+import { calculateQuotation, type PricingDbData, type PricingInput } from "./pricing.engine";
+
 export const quotationService = {
-  calculateQuotation: () => ({ total: 0 }),
+  calculateQuotation(input: PricingInput, dbData: PricingDbData) {
+    return calculateQuotation(input, dbData);
+  },
 };

@@ -11,6 +11,8 @@ services:
 
   api:
     build: ./apps/api
+    ports:
+      - "3000:3000"
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -22,6 +24,7 @@ services:
       S3_BUCKET: ${S3_BUCKET}
     volumes:
       - ./apps/api/src:/app/src
+      - api_storage:/app/storage
     depends_on:
       - postgres
       - redis
@@ -58,3 +61,4 @@ volumes:
   postgres_data:
   redis_data:
   ssl_certs:
+  api_storage:

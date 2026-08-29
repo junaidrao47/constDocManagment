@@ -1,3 +1,1 @@
-export function authMiddleware() {
-  return true;
-}
+export { authenticate as authMiddleware } from "../../middleware/authenticate";

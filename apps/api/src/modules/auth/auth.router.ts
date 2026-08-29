@@ -3,6 +3,7 @@ import { validate } from "../../middleware/validate";
 import {
   ForgotPasswordSchema,
   LoginSchema,
+  LogoutSchema,
   RefreshSchema,
   RegisterSchema,
   ResetPasswordSchema,
@@ -11,26 +12,33 @@ import { authService } from "./auth.service";
 
 export const authRouter = Router();
 
-authRouter.post("/register", validate(RegisterSchema), (_req, res) => {
-  res.json({ success: true, data: authService.register(), message: "ok" });
-});
+function sendAsync(
+  handler: (body: any, headers: Record<string, string | undefined>) => Promise<unknown>,
+  statusCode = 200,
+) {
+  return (req: any, res: any, next: any) => {
+    handler(req.body, req.headers)
+      .then((data) => res.status(statusCode).json({ success: true, data, message: "ok" }))
+      .catch(next);
+  };
+}
 
-authRouter.post("/login", validate(LoginSchema), (_req, res) => {
-  res.json({ success: true, data: authService.login(), message: "ok" });
-});
+authRouter.post(["/register", "/signup"], validate(RegisterSchema), sendAsync((body) => authService.register(body), 201));
 
-authRouter.post("/refresh", validate(RefreshSchema), (_req, res) => {
-  res.json({ success: true, data: authService.refresh(), message: "ok" });
-});
+authRouter.post("/login", validate(LoginSchema), sendAsync((body) => authService.login(body)));
 
-authRouter.post("/logout", (_req, res) => {
-  res.json({ success: true, data: authService.logout(), message: "ok" });
-});
+authRouter.post(["/refresh", "/refresh-token"], validate(RefreshSchema), sendAsync((body) => authService.refresh(body)));
 
-authRouter.post("/forgot-password", validate(ForgotPasswordSchema), (_req, res) => {
-  res.json({ success: true, data: authService.forgotPassword(), message: "ok" });
-});
+authRouter.post(
+  "/logout",
+  validate(LogoutSchema),
+  sendAsync((body, headers) =>
+    authService.logout({
+      refreshToken: body.refreshToken ?? headers.authorization?.split(" ")[1],
+    }),
+  ),
+);
 
-authRouter.post("/reset-password", validate(ResetPasswordSchema), (_req, res) => {
-  res.json({ success: true, data: authService.resetPassword(), message: "ok" });
-});
+authRouter.post("/forgot-password", validate(ForgotPasswordSchema), sendAsync((body) => authService.forgotPassword(body)));
+
+authRouter.post("/reset-password", validate(ResetPasswordSchema), sendAsync((body) => authService.resetPassword(body)));

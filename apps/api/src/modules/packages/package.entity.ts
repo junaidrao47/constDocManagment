@@ -26,6 +26,6 @@ export class PackageEntity extends AppBaseEntity {
 	})
 	services?: ServiceEntity[];
 
-	@OneToMany(() => SubscriptionEntity, (subscription) => subscription.package)
+	@OneToMany(() => SubscriptionEntity, (subscription: SubscriptionEntity) => subscription.package)
 	subscriptions?: SubscriptionEntity[];
 }

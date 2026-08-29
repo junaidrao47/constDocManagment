@@ -9,7 +9,7 @@ export class SubscriptionEntity extends AppBaseEntity {
 	@Index()
 	customerId!: string;
 
-	@ManyToOne(() => UserEntity, (user) => user.subscriptions, { onDelete: "CASCADE" })
+	@ManyToOne(() => UserEntity, (user: UserEntity) => user.subscriptions, { onDelete: "CASCADE" })
 	@JoinColumn({ name: "customer_id" })
 	customer?: UserEntity;
 
@@ -17,7 +17,7 @@ export class SubscriptionEntity extends AppBaseEntity {
 	@Index()
 	packageId!: string;
 
-	@ManyToOne(() => PackageEntity, (pkg) => pkg.subscriptions, { onDelete: "RESTRICT" })
+	@ManyToOne(() => PackageEntity, (pkg: PackageEntity) => pkg.subscriptions, { onDelete: "RESTRICT" })
 	@JoinColumn({ name: "package_id" })
 	package?: PackageEntity;
 

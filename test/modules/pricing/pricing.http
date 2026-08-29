@@ -1,0 +1,109 @@
+@baseUrl = http://localhost:3000/api
+@token = your_auth_token_here
+
+### ====================================================================
+### PRICING MODULE TESTS
+### ====================================================================
+
+### Test: Get All Pricing Plans
+GET {{baseUrl}}/pricing
+Authorization: Bearer {{token}}
+
+### Test: Get Pricing Plan by ID
+GET {{baseUrl}}/pricing/plan-id-here
+Authorization: Bearer {{token}}
+
+### Test: Create Pricing Plan
+POST {{baseUrl}}/pricing
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Custom Plan",
+  "description": "Custom pricing for enterprise clients",
+  "basePrice": 100000,
+  "features": [
+    {
+      "name": "Users",
+      "baseIncluded": 10,
+      "pricePerAdditional": 1000
+    },
+    {
+      "name": "Storage (GB)",
+      "baseIncluded": 100,
+      "pricePerAdditional": 500
+    }
+  ],
+  "billingCycle": "monthly",
+  "currency": "PKR"
+}
+
+### Test: Update Pricing Plan
+PUT {{baseUrl}}/pricing/plan-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Updated Custom Plan",
+  "basePrice": 120000,
+  "features": [
+    {
+      "name": "Users",
+      "baseIncluded": 15,
+      "pricePerAdditional": 1500
+    }
+  ]
+}
+
+### Test: Delete Pricing Plan
+DELETE {{baseUrl}}/pricing/plan-id-here
+Authorization: Bearer {{token}}
+
+### Test: Calculate Pricing Quote
+POST {{baseUrl}}/pricing/calculate
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "planId": "plan-id-here",
+  "additionalUsers": 5,
+  "additionalStorage": 50,
+  "billingCycle": "annual"
+}
+
+### Test: Get Pricing Discounts
+GET {{baseUrl}}/pricing/discounts
+Authorization: Bearer {{token}}
+
+### Test: Apply Discount Code
+POST {{baseUrl}}/pricing/apply-discount
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "code": "DISCOUNT2024",
+  "planId": "plan-id-here"
+}
+
+### Test: Get Pricing History
+GET {{baseUrl}}/pricing/history?limit=50&offset=0
+Authorization: Bearer {{token}}
+
+### Test: Simulate Price Increase
+POST {{baseUrl}}/pricing/simulate-increase
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "planId": "plan-id-here",
+  "increasePercentage": 10,
+  "effectiveDate": "2025-01-01"
+}
+
+### Test: Get Pricing Comparison
+GET {{baseUrl}}/pricing/comparison
+Authorization: Bearer {{token}}
+
+### Test: Export Pricing Report
+GET {{baseUrl}}/pricing/export?format=csv
+Authorization: Bearer {{token}}

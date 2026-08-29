@@ -1,0 +1,59 @@
+@baseUrl = http://localhost:3000/api
+
+### ====================================================================
+### AUTH MODULE TESTS
+### ====================================================================
+
+### Test: Register New User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "newuser@example.com",
+  "password": "Password123!",
+  "name": "New User",
+  "phone": "+92300123456"
+}
+
+### Test: Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@test.com",
+  "password": "AdminPassword123!"
+}
+
+### Test: Refresh Access Token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{adminRefreshToken}}"
+}
+
+### Test: Logout
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{adminRefreshToken}}"
+}
+
+### Test: Forgot Password
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "admin@test.com"
+}
+
+### Test: Reset Password with Token
+POST {{baseUrl}}/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "{{resetToken}}",
+  "newPassword": "NewPassword123!"
+}
+

@@ -1,0 +1,94 @@
+@baseUrl = http://localhost:3000/api
+@token = your_auth_token_here
+
+### ====================================================================
+### PACKAGES MODULE TESTS
+### ====================================================================
+
+### Test: Get All Packages
+GET {{baseUrl}}/packages
+Authorization: Bearer {{token}}
+
+### Test: Get Package by ID
+GET {{baseUrl}}/packages/package-id-here
+Authorization: Bearer {{token}}
+
+### Test: Create New Package
+POST {{baseUrl}}/packages
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Starter Package",
+  "description": "Basic package for small projects",
+  "price": 25000,
+  "currency": "PKR",
+  "features": ["Document management", "Basic reporting"],
+  "duration": "monthly",
+  "maxUsers": 5,
+  "maxStorage": 1000
+}
+
+### Test: Update Package
+PUT {{baseUrl}}/packages/package-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Professional Package",
+  "price": 50000,
+  "features": ["Document management", "Advanced reporting", "API access"],
+  "maxUsers": 20,
+  "maxStorage": 5000
+}
+
+### Test: Delete Package
+DELETE {{baseUrl}}/packages/package-id-here
+Authorization: Bearer {{token}}
+
+### Test: Get Package Features
+GET {{baseUrl}}/packages/package-id-here/features
+Authorization: Bearer {{token}}
+
+### Test: Add Feature to Package
+POST {{baseUrl}}/packages/package-id-here/features
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "Advanced Analytics",
+  "description": "Detailed analytics and insights"
+}
+
+### Test: Remove Feature from Package
+DELETE {{baseUrl}}/packages/package-id-here/features/feature-id-here
+Authorization: Bearer {{token}}
+
+### Test: Get Package Pricing Tiers
+GET {{baseUrl}}/packages/pricing-tiers
+Authorization: Bearer {{token}}
+
+### Test: Compare Packages
+POST {{baseUrl}}/packages/compare
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "packageIds": ["package-id-1", "package-id-2", "package-id-3"]
+}
+
+### Test: Get Package Subscriptions
+GET {{baseUrl}}/packages/package-id-here/subscriptions
+Authorization: Bearer {{token}}
+
+### Test: Activate Package
+POST {{baseUrl}}/packages/package-id-here/activate
+Authorization: Bearer {{token}}
+
+### Test: Deactivate Package
+POST {{baseUrl}}/packages/package-id-here/deactivate
+Authorization: Bearer {{token}}
+
+### Test: Search Packages
+GET {{baseUrl}}/packages/search?q=professional&limit=20&offset=0
+Authorization: Bearer {{token}}

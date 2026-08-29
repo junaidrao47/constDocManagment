@@ -1,0 +1,186 @@
+### Global Test Configuration & Credentials
+### This file contains all test credentials and common variables
+
+### Environment Variables
+@baseUrl = http://localhost:3000/api
+@basePath = http://localhost:3000
+
+### Test User Credentials - Admin
+@adminEmail = admin@test.com
+@adminPassword = AdminPassword123!
+
+### Test User Credentials - Engineer/Worker
+@engineerEmail = engineer@test.com
+@engineerPassword = EngineerPass123!
+
+### Test User Credentials - Customer
+@customerEmail = customer@test.com
+@customerPassword = CustomerPass123!
+
+### Test User Credentials - Viewer
+@viewerEmail = viewer@test.com
+@viewerPassword = ViewerPass123!
+
+### New User for Register Test
+@newUserEmail = newuser@test.com
+@newUserPassword = NewUserPass123!
+@newUserName = Test User
+@newUserPhone = +92300123456
+
+### Auth Tokens (Will be populated after login)
+@adminToken = 
+@adminRefreshToken = 
+@engineerToken = 
+@engineerRefreshToken = 
+@customerToken = 
+@customerRefreshToken = 
+@viewerToken = 
+@viewerRefreshToken = 
+
+### Common Test Data
+@timestamp = {{$timestamp}}
+@randomString = {{$randomString}}
+@randomInt = {{$randomInt}}
+
+### Module Specific Test Data
+@documentId = 
+@quotationId = 
+@packageId = 
+@paymentId = 
+@customerId = 
+@userId = 
+@industryId = 
+@serviceId = 
+
+### Response Headers
+Content-Type: application/json
+Accept: application/json
+
+### ====================================================================
+### REGISTER TESTS
+### ====================================================================
+
+### Test: Register - New User Registration
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{newUserEmail}}",
+  "password": "{{newUserPassword}}",
+  "name": "{{newUserName}}",
+  "phone": "{{newUserPhone}}"
+}
+
+### Test: Register - Duplicate Email (Should fail)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{newUserPassword}}",
+  "name": "Duplicate User",
+  "phone": "+92300654321"
+}
+
+### Test: Register - Invalid Email Format (Should fail)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "invalidemail",
+  "password": "{{newUserPassword}}",
+  "name": "Invalid User",
+  "phone": "+92300654321"
+}
+
+### Test: Register - Weak Password (Should fail)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "weakpass@test.com",
+  "password": "123",
+  "name": "Weak Pass User",
+  "phone": "+92300654321"
+}
+
+### ====================================================================
+### LOGIN TESTS
+### ====================================================================
+
+### Test: Login - Admin User
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+### Test: Login - Engineer User
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{engineerEmail}}",
+  "password": "{{engineerPassword}}"
+}
+
+### Test: Login - Customer User
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}"
+}
+
+### Test: Login - Invalid Credentials (Should fail)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "WrongPassword123!"
+}
+
+### Test: Login - Non-existing User (Should fail)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "nonexisting@test.com",
+  "password": "{{newUserPassword}}"
+}
+
+### ====================================================================
+### TOKEN REFRESH TESTS
+### ====================================================================
+
+### Test: Refresh Token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "refreshToken": "{{adminRefreshToken}}"
+}
+
+### Test: Logout
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "refreshToken": "{{adminRefreshToken}}"
+}
+
+### ====================================================================
+### HEALTH CHECK
+### ====================================================================
+
+### Test: API Health Check
+GET {{baseUrl}}/health
+
+### Test: API Status
+GET {{baseUrl}}/status

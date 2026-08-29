@@ -1,0 +1,505 @@
+{
+  "info": {
+    "name": "Construction Document Management API",
+    "description": "Current API testing collection for the Construction Document Management System",
+    "version": "1.1.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newuser@test.com\",\n  \"password\": \"Password123!\",\n  \"name\": \"Test User\",\n  \"phone\": \"+92300123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"AdminPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@test.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "forgot-password"]
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "reset-password"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "My Profile",
+          "request": {
+            "method": "GET",
+            {
+              "info": {
+                "name": "Construction Document Management API",
+                "description": "Current API testing collection for Phase 1 endpoints",
+                "version": "1.2.0",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+              },
+              "item": [
+                {
+                  "name": "Authentication",
+                  "item": [
+                    {
+                      "name": "Register",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"email\": \"newuser@test.com\",\n  \"password\": \"Password123!\",\n  \"name\": \"Test User\",\n  \"phone\": \"+92300123456\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+                      }
+                    },
+                    {
+                      "name": "Login",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\",\n  \"password\": \"AdminPassword123!\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+                      }
+                    },
+                    {
+                      "name": "Refresh",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+                      }
+                    },
+                    {
+                      "name": "Logout",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{adminRefreshToken}}\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+                      }
+                    },
+                    {
+                      "name": "Forgot Password",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@test.com\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["auth", "forgot-password"] }
+                      }
+                    },
+                    {
+                      "name": "Reset Password",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"NewPassword123!\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["auth", "reset-password"] }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "User Profile",
+                  "item": [
+                    {
+                      "name": "Get My Profile",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/users/me", "host": ["{{baseUrl}}"], "path": ["users", "me"] }
+                      }
+                    },
+                    {
+                      "name": "Update My Profile",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          { "key": "Content-Type", "value": "application/json" },
+                          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+                        ],
+                        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Name\",\n  \"phone\": \"+92300999888\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/users/me", "host": ["{{baseUrl}}"], "path": ["users", "me"] }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Customer Portal",
+                  "item": [
+                    {
+                      "name": "My Profile",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/customers/me", "host": ["{{baseUrl}}"], "path": ["customers", "me"] }
+                      }
+                    },
+                    {
+                      "name": "My Documents",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/customers/me/documents", "host": ["{{baseUrl}}"], "path": ["customers", "me", "documents"] }
+                      }
+                    },
+                    {
+                      "name": "My Subscriptions",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/customers/me/subscriptions", "host": ["{{baseUrl}}"], "path": ["customers", "me", "subscriptions"] }
+                      }
+                    },
+                    {
+                      "name": "My Invoices",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/customers/me/invoices", "host": ["{{baseUrl}}"], "path": ["customers", "me", "invoices"] }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Documents",
+                  "item": [
+                    {
+                      "name": "Create Upload Target",
+                      "request": {
+                        "method": "POST",
+                        "header": [
+                          { "key": "Content-Type", "value": "application/json" },
+                          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+                        ],
+                        "body": { "mode": "raw", "raw": "{\n  \"fileName\": \"project-specification.pdf\",\n  \"contentType\": \"application/pdf\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/documents/upload-url", "host": ["{{baseUrl}}"], "path": ["documents", "upload-url"] }
+                      }
+                    },
+                    {
+                      "name": "Get Download URL",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/documents/{{documentId}}/download-url", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}", "download-url"] }
+                      }
+                    },
+                    {
+                      "name": "Local Upload Fallback",
+                      "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "C:/path/to/project-specification.pdf" }] },
+                        "url": { "raw": "{{baseUrl}}/documents/{{documentId}}/upload", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}", "upload"] }
+                      }
+                    },
+                    {
+                      "name": "Download Document",
+                      "request": {
+                        "method": "GET",
+                        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+                        "url": { "raw": "{{baseUrl}}/documents/{{documentId}}/download", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}", "download"] }
+                      }
+                    },
+                    {
+                      "name": "Update Document Status",
+                      "request": {
+                        "method": "PATCH",
+                        "header": [
+                          { "key": "Content-Type", "value": "application/json" },
+                          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+                        ],
+                        "body": { "mode": "raw", "raw": "{\n  \"toStatus\": \"approved\",\n  \"note\": \"Approved from collection\"\n}" },
+                        "url": { "raw": "{{baseUrl}}/documents/{{documentId}}/status", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}", "status"] }
+                      }
+                    }
+                  ]
+                }
+              ],
+              "variable": [
+                { "key": "baseUrl", "value": "http://localhost:3000/api" },
+                { "key": "adminToken", "value": "" },
+                { "key": "adminRefreshToken", "value": "" },
+                { "key": "customerToken", "value": "" },
+                { "key": "resetToken", "value": "" },
+                { "key": "documentId", "value": "" }
+              ]
+            }
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Get All Customers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers"]
+            }
+          }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Customer\",\n  \"email\": \"customer@company.com\",\n  \"phone\": \"+92300123456\",\n  \"city\": \"Karachi\",\n  \"industry\": \"construction\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["customers"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Get All Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["documents"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quotations",
+      "item": [
+        {
+          "name": "Get All Quotations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/quotations",
+              "host": ["{{baseUrl}}"],
+              "path": ["quotations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Get All Payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@test.com"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminPassword123!"
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    }
+  ]
+}

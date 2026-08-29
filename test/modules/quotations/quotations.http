@@ -1,0 +1,153 @@
+@baseUrl = http://localhost:3000/api
+@token = your_auth_token_here
+
+### ====================================================================
+### QUOTATIONS MODULE TESTS
+### ====================================================================
+
+### Test: Get All Quotations
+GET {{baseUrl}}/quotations
+Authorization: Bearer {{token}}
+
+### Test: Get Quotation by ID
+GET {{baseUrl}}/quotations/quote-id-here
+Authorization: Bearer {{token}}
+
+### Test: Create New Quotation
+POST {{baseUrl}}/quotations
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "customerId": "customer-id-here",
+  "title": "Project Quotation",
+  "description": "Quotation for construction project",
+  "validUntil": "2024-12-31",
+  "items": [
+    {
+      "serviceId": "service-id-1",
+      "description": "Labor Cost",
+      "quantity": 10,
+      "unit": "days",
+      "unitPrice": 5000,
+      "taxRate": 17
+    },
+    {
+      "serviceId": "service-id-2",
+      "description": "Material Cost",
+      "quantity": 5,
+      "unit": "tons",
+      "unitPrice": 15000,
+      "taxRate": 17
+    }
+  ],
+  "discount": 5000,
+  "notes": "Payment terms: 50% upfront, 50% on completion"
+}
+
+### Test: Update Quotation
+PUT {{baseUrl}}/quotations/quote-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "title": "Updated Quotation Title",
+  "validUntil": "2025-01-31",
+  "discount": 7000,
+  "notes": "Updated payment terms"
+}
+
+### Test: Delete Quotation
+DELETE {{baseUrl}}/quotations/quote-id-here
+Authorization: Bearer {{token}}
+
+### Test: Get Quotation Items
+GET {{baseUrl}}/quotations/quote-id-here/items
+Authorization: Bearer {{token}}
+
+### Test: Add Item to Quotation
+POST {{baseUrl}}/quotations/quote-id-here/items
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "serviceId": "service-id-3",
+  "description": "Additional Service",
+  "quantity": 3,
+  "unit": "units",
+  "unitPrice": 2000,
+  "taxRate": 17
+}
+
+### Test: Update Quotation Item
+PUT {{baseUrl}}/quotations/quote-id-here/items/item-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "quantity": 15,
+  "unitPrice": 5500
+}
+
+### Test: Delete Quotation Item
+DELETE {{baseUrl}}/quotations/quote-id-here/items/item-id-here
+Authorization: Bearer {{token}}
+
+### Test: Send Quotation
+POST {{baseUrl}}/quotations/quote-id-here/send
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "recipientEmail": "customer@example.com",
+  "message": "Please review the attached quotation"
+}
+
+### Test: Download Quotation (PDF)
+GET {{baseUrl}}/quotations/quote-id-here/download
+Authorization: Bearer {{token}}
+
+### Test: Accept Quotation
+POST {{baseUrl}}/quotations/quote-id-here/accept
+Authorization: Bearer {{token}}
+
+### Test: Reject Quotation
+POST {{baseUrl}}/quotations/quote-id-here/reject
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "reason": "Price is too high"
+}
+
+### Test: Convert Quotation to Invoice
+POST {{baseUrl}}/quotations/quote-id-here/convert-to-invoice
+Authorization: Bearer {{token}}
+
+### Test: Duplicate Quotation
+POST {{baseUrl}}/quotations/quote-id-here/duplicate
+Authorization: Bearer {{token}}
+
+### Test: Calculate Quotation Total
+POST {{baseUrl}}/quotations/calculate
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "items": [
+    {
+      "quantity": 10,
+      "unitPrice": 5000,
+      "taxRate": 17
+    }
+  ],
+  "discount": 5000
+}
+
+### Test: Search Quotations
+GET {{baseUrl}}/quotations/search?q=project&status=pending&limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Test: Get Quotation Status History
+GET {{baseUrl}}/quotations/quote-id-here/status-history
+Authorization: Bearer {{token}}

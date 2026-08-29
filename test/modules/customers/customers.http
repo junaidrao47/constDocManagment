@@ -1,0 +1,22 @@
+@baseUrl = http://localhost:3000/api
+@token = {{customerToken}}
+
+### ====================================================================
+### CUSTOMERS MODULE TESTS
+### ====================================================================
+
+### Test: Get My Profile
+GET {{baseUrl}}/customers/me
+Authorization: Bearer {{token}}
+
+### Test: Get My Documents
+GET {{baseUrl}}/customers/me/documents
+Authorization: Bearer {{token}}
+
+### Test: Get My Subscriptions
+GET {{baseUrl}}/customers/me/subscriptions
+Authorization: Bearer {{token}}
+
+### Test: Get My Invoices
+GET {{baseUrl}}/customers/me/invoices
+Authorization: Bearer {{token}}

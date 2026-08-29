@@ -1,0 +1,91 @@
+@baseUrl = http://localhost:3000/api
+@adminToken = your_admin_token_here
+
+### ====================================================================
+### ADMIN MODULE TESTS
+### ====================================================================
+
+### Test: Get All Users
+GET {{baseUrl}}/admin/users
+Authorization: Bearer {{adminToken}}
+
+### Test: Get User by ID
+GET {{baseUrl}}/admin/users/user-id-here
+Authorization: Bearer {{adminToken}}
+
+### Test: Create User (Admin)
+POST {{baseUrl}}/admin/users
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "email": "newadmin@test.com",
+  "password": "AdminPass123!",
+  "name": "New Admin",
+  "phone": "+92300123456",
+  "role": "admin"
+}
+
+### Test: Update User (Admin)
+PUT {{baseUrl}}/admin/users/user-id-here
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Updated Name",
+  "phone": "+92300654321",
+  "role": "engineer"
+}
+
+### Test: Delete User (Admin)
+DELETE {{baseUrl}}/admin/users/user-id-here
+Authorization: Bearer {{adminToken}}
+
+### Test: Get Dashboard Statistics
+GET {{baseUrl}}/admin/statistics
+Authorization: Bearer {{adminToken}}
+
+### Test: Get System Logs
+GET {{baseUrl}}/admin/logs?limit=100&offset=0
+Authorization: Bearer {{adminToken}}
+
+### Test: Get Activity Audit
+GET {{baseUrl}}/admin/audit?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{adminToken}}
+
+### Test: Suspend User Account
+POST {{baseUrl}}/admin/users/user-id-here/suspend
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "reason": "Suspicious activity detected"
+}
+
+### Test: Activate User Account
+POST {{baseUrl}}/admin/users/user-id-here/activate
+Authorization: Bearer {{adminToken}}
+
+### Test: Reset User Password (Admin)
+POST {{baseUrl}}/admin/users/user-id-here/reset-password
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "newPassword": "ResetPassword123!"
+}
+
+### Test: Get Admin Settings
+GET {{baseUrl}}/admin/settings
+Authorization: Bearer {{adminToken}}
+
+### Test: Update Admin Settings
+PUT {{baseUrl}}/admin/settings
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "maintenanceMode": false,
+  "maxLoginAttempts": 5,
+  "sessionTimeout": 3600
+}

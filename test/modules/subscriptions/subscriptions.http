@@ -1,0 +1,129 @@
+@baseUrl = http://localhost:3000/api
+@token = your_auth_token_here
+
+### ====================================================================
+### SUBSCRIPTIONS MODULE TESTS
+### ====================================================================
+
+### Test: Get All Subscriptions
+GET {{baseUrl}}/subscriptions
+Authorization: Bearer {{token}}
+
+### Test: Get Subscription by ID
+GET {{baseUrl}}/subscriptions/subscription-id-here
+Authorization: Bearer {{token}}
+
+### Test: Create New Subscription
+POST {{baseUrl}}/subscriptions
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "customerId": "customer-id-here",
+  "packageId": "package-id-here",
+  "billingCycle": "monthly",
+  "startDate": "2024-01-01",
+  "autoRenew": true,
+  "paymentMethod": "credit_card"
+}
+
+### Test: Update Subscription
+PUT {{baseUrl}}/subscriptions/subscription-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "packageId": "new-package-id-here",
+  "autoRenew": false
+}
+
+### Test: Upgrade Subscription
+POST {{baseUrl}}/subscriptions/subscription-id-here/upgrade
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "newPackageId": "premium-package-id",
+  "billingAdjustment": "prorate"
+}
+
+### Test: Downgrade Subscription
+POST {{baseUrl}}/subscriptions/subscription-id-here/downgrade
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "newPackageId": "basic-package-id",
+  "billingAdjustment": "prorate"
+}
+
+### Test: Cancel Subscription
+POST {{baseUrl}}/subscriptions/subscription-id-here/cancel
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "reason": "No longer needed",
+  "feedbackType": "service_issues"
+}
+
+### Test: Pause Subscription
+POST {{baseUrl}}/subscriptions/subscription-id-here/pause
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "duration": "30",
+  "reason": "Temporary pause"
+}
+
+### Test: Resume Subscription
+POST {{baseUrl}}/subscriptions/subscription-id-here/resume
+Authorization: Bearer {{token}}
+
+### Test: Change Billing Cycle
+POST {{baseUrl}}/subscriptions/subscription-id-here/change-billing-cycle
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "newBillingCycle": "annual",
+  "prorationMethod": "prorate"
+}
+
+### Test: Update Payment Method
+POST {{baseUrl}}/subscriptions/subscription-id-here/payment-method
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "paymentMethod": "bank_transfer",
+  "bankDetails": {
+    "accountNumber": "1234567890",
+    "bankName": "Test Bank"
+  }
+}
+
+### Test: Get Subscription Invoice History
+GET {{baseUrl}}/subscriptions/subscription-id-here/invoices
+Authorization: Bearer {{token}}
+
+### Test: Get Subscription Usage
+GET {{baseUrl}}/subscriptions/subscription-id-here/usage
+Authorization: Bearer {{token}}
+
+### Test: Get Renewal Information
+GET {{baseUrl}}/subscriptions/subscription-id-here/renewal-info
+Authorization: Bearer {{token}}
+
+### Test: Send Renewal Reminder
+POST {{baseUrl}}/subscriptions/subscription-id-here/send-renewal-reminder
+Authorization: Bearer {{token}}
+
+### Test: Search Subscriptions
+GET {{baseUrl}}/subscriptions/search?customerId=customer-id&status=active&limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Test: Get Subscription Analytics
+GET {{baseUrl}}/subscriptions/analytics?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}

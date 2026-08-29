@@ -1,0 +1,122 @@
+@baseUrl = http://localhost:3000/api
+@token = your_auth_token_here
+
+### ====================================================================
+### PAYMENTS MODULE TESTS
+### ====================================================================
+
+### Test: Get All Payments
+GET {{baseUrl}}/payments
+Authorization: Bearer {{token}}
+
+### Test: Get Payment by ID
+GET {{baseUrl}}/payments/payment-id-here
+Authorization: Bearer {{token}}
+
+### Test: Create Payment
+POST {{baseUrl}}/payments
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "invoiceId": "invoice-id-here",
+  "amount": 50000,
+  "paymentMethod": "bank_transfer",
+  "transactionId": "TXN123456",
+  "description": "Payment for invoice INV-001"
+}
+
+### Test: Create Payment with Card
+POST {{baseUrl}}/payments
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "invoiceId": "invoice-id-here",
+  "amount": 50000,
+  "paymentMethod": "credit_card",
+  "cardToken": "tok_visa",
+  "description": "Credit card payment"
+}
+
+### Test: Update Payment
+PUT {{baseUrl}}/payments/payment-id-here
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "status": "completed",
+  "notes": "Payment received and verified"
+}
+
+### Test: Delete Payment
+DELETE {{baseUrl}}/payments/payment-id-here
+Authorization: Bearer {{token}}
+
+### Test: Refund Payment
+POST {{baseUrl}}/payments/payment-id-here/refund
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "amount": 25000,
+  "reason": "Partial refund requested by customer"
+}
+
+### Test: Verify Payment
+POST {{baseUrl}}/payments/payment-id-here/verify
+Authorization: Bearer {{token}}
+
+### Test: Get Payment Receipt
+GET {{baseUrl}}/payments/payment-id-here/receipt
+Authorization: Bearer {{token}}
+
+### Test: Download Payment Invoice
+GET {{baseUrl}}/payments/payment-id-here/invoice
+Authorization: Bearer {{token}}
+
+### Test: Get Payment History for Invoice
+GET {{baseUrl}}/invoices/invoice-id-here/payments
+Authorization: Bearer {{token}}
+
+### Test: Get Payment Statistics
+GET {{baseUrl}}/payments/statistics?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}
+
+### Test: Search Payments
+GET {{baseUrl}}/payments/search?status=completed&paymentMethod=bank_transfer&limit=20&offset=0
+Authorization: Bearer {{token}}
+
+### Test: Process Bulk Payments
+POST {{baseUrl}}/payments/bulk
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "payments": [
+    {
+      "invoiceId": "invoice-id-1",
+      "amount": 25000,
+      "paymentMethod": "bank_transfer"
+    },
+    {
+      "invoiceId": "invoice-id-2",
+      "amount": 35000,
+      "paymentMethod": "bank_transfer"
+    }
+  ]
+}
+
+### Test: Send Payment Reminder
+POST {{baseUrl}}/payments/send-reminder
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "invoiceId": "invoice-id-here",
+  "recipientEmail": "customer@example.com"
+}
+
+### Test: Export Payment Report
+GET {{baseUrl}}/payments/export?format=csv&startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}

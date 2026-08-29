@@ -1,0 +1,41 @@
+@baseUrl = http://localhost:3000/api
+@token = {{customerToken}}
+
+### ====================================================================
+### DOCUMENTS MODULE TESTS
+### ====================================================================
+
+### Test: Create Upload Target
+POST {{baseUrl}}/documents/upload-url
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "fileName": "project-specification.pdf",
+  "contentType": "application/pdf"
+}
+
+### Test: Local Upload Fallback
+POST {{baseUrl}}/documents/{{documentId}}/upload
+Content-Type: multipart/form-data
+Authorization: Bearer {{token}}
+
+file: @C:\path\to\project-specification.pdf
+
+### Test: Get Download URL
+GET {{baseUrl}}/documents/{{documentId}}/download-url
+Authorization: Bearer {{token}}
+
+### Test: Download Document
+GET {{baseUrl}}/documents/{{documentId}}/download
+Authorization: Bearer {{token}}
+
+### Test: Update Document Status
+PATCH {{baseUrl}}/documents/{{documentId}}/status
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "toStatus": "approved",
+  "note": "Document approved for use"
+}

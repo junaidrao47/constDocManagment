@@ -11,7 +11,7 @@ export class QuotationEntity extends AppBaseEntity {
 	@Index()
 	customerId!: string;
 
-	@ManyToOne(() => UserEntity, (user) => user.quotations, { onDelete: "CASCADE" })
+	@ManyToOne(() => UserEntity, (user: UserEntity) => user.quotations, { onDelete: "CASCADE" })
 	@JoinColumn({ name: "customer_id" })
 	customer?: UserEntity;
 

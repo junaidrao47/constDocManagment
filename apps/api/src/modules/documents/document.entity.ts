@@ -11,7 +11,7 @@ export class DocumentEntity extends AppBaseEntity {
 	@Index()
 	customerId!: string;
 
-	@ManyToOne(() => UserEntity, (user) => user.documents, { onDelete: "CASCADE" })
+	@ManyToOne(() => UserEntity, (user: UserEntity) => user.documents, { onDelete: "CASCADE" })
 	@JoinColumn({ name: "customer_id" })
 	customer?: UserEntity;
 
@@ -38,6 +38,6 @@ export class DocumentEntity extends AppBaseEntity {
 	@Column({ name: "expires_at", type: "timestamptz", nullable: true })
 	expiresAt?: Date | null;
 
-	@OneToMany(() => DocumentStatusHistoryEntity, (history) => history.document)
+	@OneToMany(() => DocumentStatusHistoryEntity, (history: DocumentStatusHistoryEntity) => history.document)
 	statusHistory?: DocumentStatusHistoryEntity[];
 }

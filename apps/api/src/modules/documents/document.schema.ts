@@ -15,6 +15,12 @@ export const DocumentSchema = z.object({
 	status: DocumentStatusSchema.default("pending"),
 });
 
+export const CreateDocumentUploadSchema = z.object({
+	fileName: z.string().trim().min(1).max(255),
+	contentType: z.string().trim().min(1).max(200).optional(),
+	serviceId: z.string().uuid().optional(),
+});
+
 export const UpdateDocumentStatusSchema = z.object({
 	fromStatus: DocumentStatusSchema.optional(),
 	toStatus: DocumentStatusSchema,

@@ -190,13 +190,13 @@ describe("withdrawing access takes effect immediately", () => {
   });
 });
 
-describe("the admin and manager boundary", () => {
-  it("gives a manager 403 on every admin-only user route", async () => {
-    const manager = await seedUser({ role: UserRole.Manager });
+describe("the admin and agent boundary", () => {
+  it("gives an agent 403 on every admin-only user route", async () => {
+    const agent = await seedUser({ role: UserRole.Agent });
     const target = await seedUser({ role: UserRole.Customer });
-    const token = bearer(mintToken(manager));
+    const token = bearer(mintToken(agent));
 
-    // `manager` used to be listed alongside `admin` on this whole mount, which handed
+    // A non-admin used to be listed alongside `admin` on this whole mount, which handed
     // the role user management, pricing and analytics it was never meant to have.
     const list = await request(testApp()).get("/api/admin/users").set("Authorization", token);
     expect(list.status).toBe(403);
@@ -217,10 +217,15 @@ describe("the admin and manager boundary", () => {
     expect(setStatus.body.error).toBe("Forbidden");
   });
 
-  it("lets a manager do the job the role exists for", async () => {
-    const customer = await seedUser({ role: UserRole.Customer });
+  it("keeps manager oversight separate from the admin surface", async () => {
     const manager = await seedUser({ role: UserRole.Manager });
+    const customer = await seedUser({ role: UserRole.Customer });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
+
+    await request(testApp())
+      .get("/api/admin/users")
+      .set("Authorization", bearer(mintToken(manager)))
+      .expect(403);
 
     const moved = await request(testApp())
       .patch(`/api/documents/${document.id}/status`)
@@ -231,14 +236,28 @@ describe("the admin and manager boundary", () => {
     expect(moved.body.data.status).toBe(DocumentStatus.UnderReview);
   });
 
+  it("lets an agent do the job the role exists for", async () => {
+    const customer = await seedUser({ role: UserRole.Customer });
+    const agent = await seedUser({ role: UserRole.Agent });
+    const document = seedDocument(customer.id, DocumentStatus.Pending);
+
+    const moved = await request(testApp())
+      .patch(`/api/documents/${document.id}/status`)
+      .set("Authorization", bearer(mintToken(agent)))
+      .send({ fromStatus: DocumentStatus.Pending, toStatus: DocumentStatus.UnderReview });
+
+    expect(moved.status).toBe(200);
+    expect(moved.body.data.status).toBe(DocumentStatus.UnderReview);
+  });
+
   it("rejects an illegal status transition as a conflict, not a crash", async () => {
     const customer = await seedUser({ role: UserRole.Customer });
-    const manager = await seedUser({ role: UserRole.Manager });
+    const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
 
     const illegal = await request(testApp())
       .patch(`/api/documents/${document.id}/status`)
-      .set("Authorization", bearer(mintToken(manager)))
+      .set("Authorization", bearer(mintToken(agent)))
       .send({ toStatus: DocumentStatus.Approved });
 
     expect(illegal.status).toBe(409);

@@ -241,6 +241,17 @@ The stack starts on a default Windows/Docker Desktop install. `DATABASE_URL` and
 ## 2026-09-04
 
 ### Decision
+Restore `manager` as a distinct database role instead of removing it while restricting the `/api/admin` mount to admins.
+
+### Why
+The signed scope defines four roles: customer, agent, manager, and admin. The Phase 1 RBAC change correctly removed managers from the admin surface, but it also deleted the enum value, which would make the manager's documented oversight and approval permissions impossible to represent. The entity and initial schema now retain the role, while a forward migration adds it to databases that already ran the original three-value enum. PostgreSQL cannot remove enum values in place, so rollback leaves the value intact rather than risking destructive data loss.
+
+### Result
+Managers remain distinct from admins, can use staff document read and approval paths, and still receive 403 from `/api/admin`. The regression is covered by `apps/api/test/phase1-gate.test.ts`.
+
+## 2026-09-04
+
+### Decision
 Replace JWT password-reset tokens with opaque random values held in Redis, add a `typ` claim to every issued JWT, and require the current password before an email address can change.
 
 ### Why

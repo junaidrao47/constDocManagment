@@ -114,9 +114,13 @@ function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): 
     return;
   }
 
-  if (actor.role === UserRole.Agent || actor.role === UserRole.Manager || actor.role === UserRole.Admin) {
+  if (
+    actor.role === UserRole.Agent ||
+    actor.role === UserRole.Manager ||
+    actor.role === UserRole.Admin
+  ) {
     // TODO(phase-4): once assignments exist, an agent must be limited to documents
-    // belonging to customers assigned to them. Managers keep team-wide visibility.
+    // belonging to customers assigned to them.
     return;
   }
 

@@ -1,5 +1,4 @@
 import { HttpError } from "../../utils/http-error";
-import { UserRole } from "../users/user.entity";
 
 export enum DocumentStatus {
   Pending = "pending",
@@ -13,12 +12,11 @@ export enum DocumentStatus {
 /**
  * Who may move a document through the flow.
  *
- * `manager` was missing, which meant the role responsible for oversight could not
- * approve anything. Derived from `UserRole` so the set cannot drift from the enum.
+ * Agents and managers can approve; admins retain the override.
  */
-export type DocumentStatusActorRole = UserRole.Agent | UserRole.Manager | UserRole.Admin;
+export type DocumentStatusActorRole = "agent" | "manager" | "admin";
 
-const DOCUMENT_STATUS_ACTOR_ROLES: readonly UserRole[] = [UserRole.Agent, UserRole.Manager, UserRole.Admin];
+const DOCUMENT_STATUS_ACTOR_ROLES: readonly DocumentStatusActorRole[] = ["agent", "manager", "admin"];
 
 export const DOCUMENT_STATUS_FLOW: Record<DocumentStatus, DocumentStatus[]> = {
   [DocumentStatus.Pending]: [DocumentStatus.UnderReview],

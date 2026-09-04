@@ -182,8 +182,7 @@ documentRouter.get(
 
 documentRouter.patch(
   "/:id/status",
-  // Manager was missing here, so the role accountable for approvals could not
-  // approve. Admin keeps the override.
+  // Agents and managers approve documents; admin keeps the override.
   authorize(UserRole.Agent, UserRole.Manager, UserRole.Admin),
   validateParams(DocumentIdParamSchema),
   validate(UpdateDocumentStatusSchema),

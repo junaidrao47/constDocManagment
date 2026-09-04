@@ -256,7 +256,7 @@ NODE_ENV=development
 API_URL=http://localhost:3000
 API_PORT=3000
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=15432
 ```
 
 ### Staging (.env.staging)

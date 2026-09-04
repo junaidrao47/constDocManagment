@@ -1,3 +1,12 @@
+# Production stack.
+#   docker compose -f compose.prod.yml up --build -d
+#
+# Expects a .env in this directory holding real secrets (see .env.example).
+# Postgres and Redis are deliberately NOT published to the host — only nginx is
+# reachable from outside the Docker network.
+
+name: constdocmanagment-prod
+
 services:
   nginx:
     build: ./nginx
@@ -6,55 +15,88 @@ services:
       - "443:443"
     volumes:
       - ssl_certs:/etc/letsencrypt
+    restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   api:
-    build: ./apps/api
+    build:
+      context: ./apps/api
+      target: production
+    env_file: .env
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://user:pass@postgres:5432/construction_db
+      # Built from the DB_* parts in .env so credentials live in exactly one place.
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      AWS_REGION: ${AWS_REGION}
-      S3_BUCKET: ${S3_BUCKET}
+    volumes:
+      - api_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   worker:
-    build: ./apps/worker
+    build:
+      context: ./apps/worker
+      target: production
+    env_file: .env
     environment:
       NODE_ENV: production
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgres://user:pass@postgres:5432/construction_db
-      AWS_REGION: ${AWS_REGION}
     restart: unless-stopped
     depends_on:
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The API owns migrations; wait for it before assuming the schema exists.
+      api:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: construction_db
+      POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   redis:
     image: redis:7-alpine
     command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
     volumes:
       - redis_data:/data
-      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
 volumes:
   postgres_data:
   redis_data:
+  api_storage:
   ssl_certs:

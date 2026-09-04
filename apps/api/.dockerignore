@@ -1,0 +1,28 @@
+# Keep the build context small and never let host artifacts shadow what the
+# image installs or compiles. node_modules is the important one: without this,
+# `COPY . .` would overwrite the container's Linux-built native modules
+# (bcryptjs, pg) with whatever was installed on the host.
+node_modules
+dist
+build
+coverage
+
+# environment files — values are injected by Compose, never baked into the image
+.env
+.env.*
+
+# logs and caches
+*.log
+npm-debug.log*
+.cache
+*.tsbuildinfo
+
+# local tooling
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+Dockerfile
+.dockerignore

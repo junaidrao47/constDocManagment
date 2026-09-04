@@ -1,64 +1,123 @@
+# Local development stack.
+#   docker compose up --build          (api, worker, postgres, redis)
+#   docker compose --profile proxy up  (also starts nginx on :80)
+#
+# Values come from .env in this directory. Compose uses it for ${VAR}
+# interpolation below, and `env_file` injects the same values into containers.
+# Anything set under `environment:` overrides `env_file:`.
+
+name: constdocmanagment
+
 services:
   nginx:
+    profiles: ["proxy"]
     build: ./nginx
     ports:
       - "80:80"
-      - "443:443"
-    volumes:
-      - ssl_certs:/etc/letsencrypt
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   api:
-    build: ./apps/api
+    build:
+      context: ./apps/api
+      target: development
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
+    env_file: .env
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgres://user:pass@postgres:5432/construction_db
+      # Container-side hostnames. These deliberately override the localhost
+      # values in .env, which exist for host-side tooling.
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      AWS_REGION: ${AWS_REGION}
-      S3_BUCKET: ${S3_BUCKET}
     volumes:
+      # Source is mounted so ts-node-dev reloads on host edits. Only src/ is
+      # mounted, leaving the container's node_modules and dist intact.
       - ./apps/api/src:/app/src
       - api_storage:/app/storage
+    healthcheck:
+      # node:20-alpine ships no curl, so use Node's global fetch instead.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   worker:
-    build: ./apps/worker
+    build:
+      context: ./apps/worker
+      target: development
+    env_file: .env
     environment:
       NODE_ENV: development
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgres://user:pass@postgres:5432/construction_db
-      AWS_REGION: ${AWS_REGION}
+    volumes:
+      - ./apps/worker/src:/app/src
     depends_on:
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The API owns migrations, so wait for it to be healthy before the worker
+      # assumes the schema exists.
+      api:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
+    ports:
+      # HOST_PORT:CONTAINER_PORT. The container port stays 5432, which is what
+      # the api and worker connect to as postgres:5432 — this mapping exists only
+      # so host tooling (npm run db:migrate, psql, a GUI client) can reach the
+      # database via the localhost DATABASE_URL in .env.
+      #
+      # The host side defaults to 15432, not 5432: Windows reserves TCP blocks
+      # for Hyper-V/WSL and binding 127.0.0.1:5432 fails with "an attempt was
+      # made to access a socket in a way forbidden by its access permissions",
+      # and a locally installed PostgreSQL would occupy the default port anyway.
+      # Bound to 127.0.0.1 so it is not reachable from other machines — Docker
+      # would otherwise publish on every interface.
+      - "127.0.0.1:${DB_PORT:-15432}:5432"
     environment:
-      POSTGRES_DB: construction_db
+      POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
   redis:
     image: redis:7-alpine
     command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      # Host side only; in-network callers use redis:6379. Localhost-bound
+      # because there is no Redis password, so it must not be reachable from the
+      # network. Off the default port for the same Windows reason as DB_PORT.
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - redis_data:/data
-      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
 volumes:
   postgres_data:
   redis_data:
-  ssl_certs:
   api_storage:

@@ -49,7 +49,9 @@ documentRouter.post(
       throw new Error("file is required");
     }
 
-    return documentService.uploadLocalDocument(req.user.id, req.params.id, {
+    const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    return documentService.uploadLocalDocument(req.user.id, documentId, {
       buffer: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -67,7 +69,8 @@ documentRouter.get(
       throw new Error("Authenticated user is required");
     }
 
-    return documentService.getDocumentDownloadTarget(req.user.id, req.params.id);
+    const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    return documentService.getDocumentDownloadTarget(req.user.id, documentId);
   }),
 );
 
@@ -81,7 +84,8 @@ documentRouter.get(
         throw new Error("Authenticated user is required");
       }
 
-      const document = await documentService.getDocumentLocalPath(req.user.id, req.params.id);
+      const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const document = await documentService.getDocumentLocalPath(req.user.id, documentId);
       const signedUrl = await getDownloadUrl({ key: document.s3Key });
 
       if (signedUrl) {
@@ -106,6 +110,7 @@ documentRouter.patch(
       throw new Error("Authenticated user is required");
     }
 
-    return documentService.updateDocumentStatus(req.params.id, req.body, req.user.id);
+    const documentId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    return documentService.updateDocumentStatus(documentId, req.body, req.user.id);
   }),
 );

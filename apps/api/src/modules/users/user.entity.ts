@@ -32,7 +32,7 @@ export class UserEntity extends AppBaseEntity {
 
 	@Column({
 		type: "enum",
-		enum: UserRole,
+		enum: UserRole, enumName: "user_role_enum",
 		default: UserRole.Customer,
 	})
 	role!: UserRole;

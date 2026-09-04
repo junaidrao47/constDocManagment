@@ -30,7 +30,7 @@ export class DocumentEntity extends AppBaseEntity {
 
 	@Column({
 		type: "enum",
-		enum: DocumentStatus,
+		enum: DocumentStatus, enumName: "document_status_enum",
 		default: DocumentStatus.Pending,
 	})
 	status!: DocumentStatus;

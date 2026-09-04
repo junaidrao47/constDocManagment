@@ -13,13 +13,13 @@ export class DocumentStatusHistoryEntity extends AppBaseEntity {
   @JoinColumn({ name: "document_id" })
   document?: DocumentEntity;
 
-  @Column({ name: "from_status", type: "varchar", length: 50, nullable: true })
+  @Column({ name: "from_status", type: "enum", enum: DocumentStatus, enumName: "document_status_enum", nullable: true })
   fromStatus?: DocumentStatus | null;
 
   @Column({
     name: "to_status",
     type: "enum",
-    enum: DocumentStatus,
+    enum: DocumentStatus, enumName: "document_status_enum",
   })
   toStatus!: DocumentStatus;
 

@@ -1,8 +1,9 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import jwt, { JwtPayload } from "jsonwebtoken";
+import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 import { MoreThan } from "typeorm";
 import { AppDataSource } from "../../config/database";
+import { env } from "../../config/env";
 import { redisClient } from "../../config/redis";
 import { HttpError } from "../../utils/http-error";
 import { RefreshTokenEntity } from "../../entities/refresh-token.entity";
@@ -44,16 +45,10 @@ interface AuthUser {
   role: UserRole;
 }
 
-const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? "15m";
-const REFRESH_TOKEN_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN ?? "7d";
-
-function requireSecret(value: string | undefined, name: string): string {
-  if (!value) {
-    throw new HttpError(500, `${name} is not configured`);
-  }
-
-  return value;
-}
+// Sourced from the validated env module, which guarantees both signing keys are
+// present and long enough before the process finishes booting.
+const ACCESS_TOKEN_EXPIRES_IN = env.jwtExpiresIn;
+const REFRESH_TOKEN_EXPIRES_IN = env.jwtRefreshExpiresIn;
 
 function durationToMs(duration: string): number {
   const match = duration.trim().match(/^(\d+)([smhd])$/i);
@@ -98,9 +93,12 @@ function signAccessToken(user: UserEntity): string {
     role: user.role,
   };
 
-  return jwt.sign(payload, requireSecret(process.env.JWT_SECRET, "JWT_SECRET"), {
-    expiresIn: ACCESS_TOKEN_EXPIRES_IN,
-  });
+  const secret = env.jwtSecret;
+  const options: SignOptions = {
+    expiresIn: ACCESS_TOKEN_EXPIRES_IN as SignOptions["expiresIn"],
+  };
+
+  return jwt.sign(payload, secret, options);
 }
 
 function signRefreshToken(user: UserEntity): { refreshToken: string; tokenId: string } {
@@ -111,12 +109,15 @@ function signRefreshToken(user: UserEntity): { refreshToken: string; tokenId: st
     role: user.role,
   };
 
+  const secret = env.jwtRefreshSecret;
+  const options: SignOptions = {
+    expiresIn: REFRESH_TOKEN_EXPIRES_IN as SignOptions["expiresIn"],
+    jwtid: tokenId,
+  };
+
   return {
     tokenId,
-    refreshToken: jwt.sign(payload, requireSecret(process.env.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET"), {
-      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
-      jwtid: tokenId,
-    }),
+    refreshToken: jwt.sign(payload, secret, options),
   };
 }
 
@@ -136,7 +137,7 @@ async function persistRefreshToken(userId: string, tokenId: string, refreshToken
 }
 
 async function revokeRefreshToken(refreshToken: string): Promise<void> {
-  const refreshSecret = requireSecret(process.env.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET");
+  const refreshSecret = env.jwtRefreshSecret;
   const decoded = jwt.verify(refreshToken, refreshSecret) as JwtPayload & { jti?: string };
   const tokenId = decoded.jti;
   const tokenHash = hashToken(refreshToken);
@@ -222,7 +223,7 @@ export const authService = {
   async refresh(input: RefreshInput) {
     assertDatabaseReady();
 
-    const refreshSecret = requireSecret(process.env.JWT_REFRESH_SECRET, "JWT_REFRESH_SECRET");
+    const refreshSecret = env.jwtRefreshSecret;
     const decoded = jwt.verify(input.refreshToken, refreshSecret) as JwtPayload & AuthUser;
     const tokenId = decoded.jti;
 
@@ -292,7 +293,7 @@ export const authService = {
         email: user.email,
         purpose: "password-reset",
       },
-      requireSecret(process.env.JWT_SECRET, "JWT_SECRET"),
+      env.jwtSecret,
       {
         expiresIn: "15m",
       },
@@ -304,7 +305,7 @@ export const authService = {
   async resetPassword(input: ResetPasswordInput) {
     assertDatabaseReady();
 
-    const decoded = jwt.verify(input.token, requireSecret(process.env.JWT_SECRET, "JWT_SECRET")) as JwtPayload & {
+    const decoded = jwt.verify(input.token, env.jwtSecret) as JwtPayload & {
       id?: string;
       purpose?: string;
     };

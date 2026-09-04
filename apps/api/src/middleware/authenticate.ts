@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import { env } from "../config/env";
 
 export interface AuthenticatedUser {
   id: string;
@@ -24,8 +25,9 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
   }
 
   try {
-    const secret = process.env.JWT_SECRET ?? "";
-    const payload = jwt.verify(token, secret) as AuthenticatedUser;
+    // env.jwtSecret is validated at boot, so a verify failure here is a genuinely
+    // bad token rather than a missing-secret misconfiguration masquerading as one.
+    const payload = jwt.verify(token, env.jwtSecret) as AuthenticatedUser;
     req.user = payload;
     next();
   } catch {

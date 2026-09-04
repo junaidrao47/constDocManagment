@@ -40,6 +40,14 @@ export class UserEntity extends AppBaseEntity {
 	@Column({ name: "is_active", type: "boolean", default: true })
 	isActive!: boolean;
 
+	/**
+	 * Tokens issued before this moment are refused. Set on password reset and on
+	 * any admin change to role or active status, so a stateless access token cannot
+	 * outlive the permissions it was minted with. NULL means never invalidated.
+	 */
+	@Column({ name: "tokens_valid_from", type: "timestamptz", nullable: true })
+	tokensValidFrom?: Date | null;
+
 	@OneToMany(() => RefreshTokenEntity, (refreshToken: RefreshTokenEntity) => refreshToken.user)
 	refreshTokens?: RefreshTokenEntity[];
 

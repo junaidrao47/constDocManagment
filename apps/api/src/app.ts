@@ -16,6 +16,7 @@ import { userRouter } from "./modules/users/user.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
 import { errorHandler } from "./middleware/errorHandler";
+import { UserRole } from "./modules/users/user.entity";
 import { AppDataSource } from "./config/database";
 import { redisClient } from "./config/redis";
 import { env } from "./config/env";
@@ -55,12 +56,40 @@ export function createApp() {
     .filter(Boolean);
   const allowAnyOrigin = allowedOrigins.includes("*");
 
+  // General ceiling, per client IP.
   const rateLimiter = rateLimit({
     windowMs: 60_000,
     limit: 100,
     standardHeaders: true,
     legacyHeaders: false,
   });
+
+  /**
+   * Credential endpoints get their own, much tighter budget.
+   *
+   * The general limit is 100 requests a minute, which is generous enough to walk a
+   * password list or enumerate reset requests all day. These are the endpoints
+   * where an attacker gains something by repeating themselves, so they are counted
+   * separately — a burst of login attempts cannot consume the caller's whole quota
+   * either, which would turn a guessing attempt into a denial of service.
+   *
+   * `skipSuccessfulRequests` means a person typing one wrong password then getting
+   * it right is not penalised; only failures accumulate.
+   */
+  const authRateLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: { success: false, error: "Too many attempts. Try again later." },
+  });
+
+  // nginx terminates the connection, so without this every request appears to come
+  // from the proxy and the limits above would apply to all clients as one bucket.
+  // Exactly one hop is trusted: trusting the whole chain would let a client forge
+  // X-Forwarded-For and get a fresh quota per request.
+  app.set("trust proxy", 1);
 
   app.use(helmet());
   app.use(
@@ -71,17 +100,31 @@ export function createApp() {
   );
   app.use(compression());
   app.use(express.json({ limit: "10mb" }));
-  app.use(morgan("combined"));
+
+  // Access logs are silenced under NODE_ENV=test only. An assertion failure is easier
+  // to read when it is not buried in one combined-format line per request, and the
+  // suite makes several dozen.
+  if (env.nodeEnv !== "test") {
+    app.use(morgan("combined"));
+  }
+
   app.use("/api", rateLimiter);
 
+  app.use("/api/auth/login", authRateLimiter);
+  app.use("/api/auth/register", authRateLimiter);
+  app.use("/api/auth/forgot-password", authRateLimiter);
+  app.use("/api/auth/reset-password", authRateLimiter);
   app.use("/api/auth", authRouter);
   app.use("/api/users", authenticate, userRouter);
-  app.use("/api/customers", authenticate, authorize("customer"), customerRouter);
+  app.use("/api/customers", authenticate, authorize(UserRole.Customer), customerRouter);
   app.use("/api/documents", authenticate, documentRouter);
   app.use("/api/quotations", quotationRouter);
   app.use("/api/pricing", pricingRouter);
   app.use("/api/packages", packageRouter);
-  app.use("/api/admin", authenticate, authorize("admin", "manager"), adminRouter);
+  // Admin only. `manager` used to be listed here and so inherited the entire admin
+  // surface — user management, pricing configuration, analytics. Manager-specific
+  // oversight lives under /api/manager, which Phase 4 adds along with assignments.
+  app.use("/api/admin", authenticate, authorize(UserRole.Admin), adminRouter);
 
   // Liveness: answers as long as the process can serve HTTP. Used by the Docker
   // healthcheck, so it deliberately does not touch Postgres or Redis — a brief

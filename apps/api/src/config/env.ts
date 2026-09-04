@@ -41,6 +41,14 @@ const EnvSchema = z
     awsRegion: z.string().min(1).optional(),
     s3Bucket: z.string().min(1).optional(),
     s3BackupBucket: z.string().min(1).optional(),
+
+    // Envelope sender for outgoing mail. Without it the email transport falls
+    // back to logging the message instead of delivering it.
+    mailFrom: z.string().email().optional(),
+
+    // Base URL of the browser app, used to build links inside emails such as the
+    // password-reset link. Falls back to the first CORS origin when unset.
+    webUrl: z.string().url().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.nodeEnv !== "production") {
@@ -62,6 +70,17 @@ const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ["jwtRefreshSecret"],
         message: "must differ from JWT_SECRET so a leaked access key cannot mint refresh tokens",
+      });
+    }
+
+    // Every notification category in the scope document is email. Booting
+    // production without a sender means password resets and renewal reminders
+    // fail silently, which is worse than refusing to start.
+    if (!value.mailFrom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["mailFrom"],
+        message: "is required in production so outgoing email is not silently dropped",
       });
     }
   });
@@ -88,6 +107,8 @@ const parsed = EnvSchema.safeParse({
   awsRegion: optional(process.env.AWS_REGION),
   s3Bucket: optional(process.env.S3_BUCKET),
   s3BackupBucket: optional(process.env.S3_BACKUP_BUCKET),
+  mailFrom: optional(process.env.MAIL_FROM),
+  webUrl: optional(process.env.WEB_URL),
 });
 
 if (!parsed.success) {
@@ -105,6 +126,8 @@ if (!parsed.success) {
     awsRegion: "AWS_REGION",
     s3Bucket: "S3_BUCKET",
     s3BackupBucket: "S3_BACKUP_BUCKET",
+    mailFrom: "MAIL_FROM",
+    webUrl: "WEB_URL",
   };
 
   const details = parsed.error.issues

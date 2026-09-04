@@ -47,9 +47,9 @@ No portal owns these; all four roles use them.
 | POST | `/register` | DONE | Create a customer account. Role is pinned to `customer` — correct, keep it |
 | POST | `/login` | DONE | Issue access + refresh pair |
 | POST | `/refresh` | DONE | Rotate the pair; revokes the presented token first |
-| POST | `/logout` | FIX | Revoke the refresh token. The header fallback passes an *access* token to the refresh verifier and always throws |
-| POST | `/forgot-password` | FIX | **Currently returns the reset token in the response body, and 404s on unknown emails.** Must email the token and answer identically either way |
-| POST | `/reset-password` | FIX | Works, but must also revoke all existing refresh tokens for the user |
+| POST | `/logout` | DONE | Revoke the refresh token, taken from the body only — the header fallback passed an *access* token to the refresh verifier and always threw |
+| POST | `/forgot-password` | DONE | Emails an opaque, single-use token and answers identically for known, unknown and disabled addresses |
+| POST | `/reset-password` | DONE | Consumes the token atomically and ends every existing session, access tokens included |
 | POST | `/change-password` | NEW | Authenticated change with current-password confirmation; revokes other sessions |
 | GET | `/session` | NEW | Only needed if decision A lands on HTTP-only cookies, since the browser cannot read the token itself |
 
@@ -104,9 +104,9 @@ Documents (scope §5, §6):
 | Method | Path | Status | Purpose |
 |---|---|---|---|
 | GET | `/me/documents` | DONE | Own documents with signed download URLs |
-| GET | `/api/documents/:id` | NEW | Single document with its status history |
+| GET | `/api/documents/:id` | DONE | Single document. Status history arrives with the shared audit trail in Phase 2 |
 | POST | `/api/documents/upload-url` | DONE | Create a `pending` row, return a presigned S3 PUT or a local fallback URL |
-| POST | `/api/documents/:id/upload` | FIX | Local multipart fallback. Needs a MIME allow-list — only size is checked today |
+| POST | `/api/documents/:id/upload` | DONE | Local multipart fallback, constrained by a MIME-plus-extension allow-list and a 25MB ceiling |
 | GET | `/api/documents/:id/download-url` | DONE | Signed, time-limited download URL |
 | GET | `/api/documents/:id/download` | DONE | Redirect to S3, or stream the local file |
 | DELETE | `/api/documents/:id` | NEW | Withdraw an upload, permitted only while `pending` |
@@ -154,9 +154,11 @@ Notifications (scope §6a, §10):
 to the caller; a manager sees their whole team's assignments instead of a personal queue.
 
 The assignment table does not exist yet — there is no `assign` anywhere in the codebase — so
-this entire portal is blocked on Phase 4. And because every document read route is currently
-`authorize("customer")`, an agent cannot open a document they are expected to approve. That
-is the single most important functional defect in the current build.
+the customer-scoped half of this portal is still blocked on Phase 4. The document routes are
+not: Phase 1 opened reads and status changes to staff, so an agent or manager can fetch,
+download and approve a document today. Until assignments exist that visibility is *every*
+customer's documents rather than an assigned subset, which is deliberate and marked
+`TODO(phase-4)` at the one service helper that decides it.
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
@@ -166,9 +168,9 @@ is the single most important functional defect in the current build.
 | GET | `/customers/:id/documents` | NEW | That customer's documents |
 | GET | `/customers/:id/activity` | NEW | Combined status trail across modules |
 | GET | `/documents` | NEW | Review queue, filterable by status and category |
-| GET | `/documents/:id` | FIX | Detail with history. Blocked today by the `customer`-only gate |
-| GET | `/documents/:id/download-url` | FIX | Reviewers must be able to open the file |
-| PATCH | `/documents/:id/status` | FIX | Approve, reject or move to under-review. Exists as `authorize("agent","admin")`, which wrongly excludes `manager` |
+| GET | `/documents/:id` | DONE | Detail. Reads are open to staff; ownership is decided in one service helper. Agent scoping to assigned customers is Phase 4 |
+| GET | `/documents/:id/download-url` | DONE | Reviewers can open the file — and `/download` streams it while AWS is unconfigured |
+| PATCH | `/documents/:id/status` | DONE | Approve, reject or move to under-review. `manager` is now included, with an optional `fromStatus` concurrency guard |
 | GET | `/documents/:id/history` | NEW | Full audit trail |
 | GET | `/quotations` | NEW | Quotations for assigned customers |
 | PATCH | `/quotations/:id/status` | NEW | Move through the §6a lifecycle. Manager only |
@@ -198,11 +200,11 @@ Users and access:
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
-| GET | `/users` | STUB | All users, filterable by role and active state |
-| POST | `/users` | NEW | **Create agent, manager and admin accounts.** Impossible through the API today — these currently require direct database writes |
-| GET | `/users/:id` | NEW | Detail with related records |
-| PATCH | `/users/:id` | STUB | Update profile and role |
-| PATCH | `/users/:id/status` | NEW | Activate or deactivate; must invalidate live sessions |
+| GET | `/users` | DONE | All users, filterable by role and active state |
+| POST | `/users` | DONE | **Create agent, manager and admin accounts.** The only route to a non-customer account: `/api/auth/register` pins the role to `customer` |
+| GET | `/users/:id` | DONE | Detail. Related records arrive with the modules that own them |
+| PATCH | `/users/:id` | DONE | Update email, role and active state; a role change invalidates live sessions |
+| PATCH | `/users/:id/status` | DONE | Activate or deactivate; invalidates live sessions, and refuses an admin disabling themselves |
 | POST | `/users/:id/force-reset` | NEW | Admin-initiated password reset |
 | DELETE | `/users/:id` | NEW | Soft delete — hard delete cascades across seven tables |
 
@@ -330,8 +332,10 @@ Notifications, content and analytics:
 | FAQs, reviews, contact inbox | — | — | — | ✓ |
 | Analytics and audit log | — | — | r (team) | ✓ |
 
-Two rows contradict the code as it stands: agents and managers cannot read documents at all,
-and managers currently hold the whole admin surface. Both are Phase 1 fixes.
+Both rows that used to contradict the code are now aligned with it: staff can read and download
+documents, and `/api/admin` is admin-only. The remaining gap in this matrix is `asg` — agents and
+managers are currently granted the same document visibility as an admin, because there is no
+assignment table to narrow it against. Phase 4 turns `✓` back into `asg` in one service helper.
 
 ---
 

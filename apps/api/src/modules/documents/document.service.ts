@@ -10,13 +10,26 @@ import {
   removeLocalDocument,
 } from "../../utils/s3";
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
-import { UserEntity } from "../users/user.entity";
+import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import {
   assertDocumentStatusTransition,
   canMutateDocumentStatus,
   DocumentStatus,
 } from "./document-status";
+
+/**
+ * Who is asking, as resolved by `authenticate` from the database row.
+ *
+ * Every document operation takes one of these instead of a bare `customerId`. The
+ * old signatures could only express "this must be the owner", which is why agents
+ * and managers — the people whose job is to review documents — were locked out of
+ * reading them.
+ */
+export interface DocumentActor {
+  id: string;
+  role: UserRole;
+}
 
 export interface CreateDocumentUploadInput {
   fileName: string;
@@ -81,15 +94,45 @@ async function requireDocument(documentId: string): Promise<DocumentEntity> {
   return document;
 }
 
-async function requireUser(userId: string): Promise<UserEntity> {
-  const repository = AppDataSource.getRepository(UserEntity);
-  const user = await repository.findOne({ where: { id: userId } });
+/**
+ * The single place that decides whether `actor` may see `document`.
+ *
+ * One helper rather than a copy of the ownership check in each method, because the
+ * previous copies had already diverged — and Phase 4 adds agent-to-customer
+ * assignment scoping, which must land in exactly one place to be trustworthy.
+ *
+ * Customers see only their own. Staff see everything for now; narrowing agents to
+ * their assigned customers needs the assignment table, which does not exist yet.
+ * That is a deliberate, dated gap rather than an oversight.
+ */
+function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): void {
+  if (actor.role === UserRole.Customer) {
+    if (document.customerId !== actor.id) {
+      throw new HttpError(403, "Forbidden");
+    }
 
-  if (!user) {
-    throw new HttpError(404, "User not found");
+    return;
   }
 
-  return user;
+  if (actor.role === UserRole.Agent || actor.role === UserRole.Manager || actor.role === UserRole.Admin) {
+    // TODO(phase-4): once assignments exist, an agent must be limited to documents
+    // belonging to customers assigned to them. Managers keep team-wide visibility.
+    return;
+  }
+
+  throw new HttpError(403, "Forbidden");
+}
+
+/**
+ * Writing the file itself is the owner's act alone.
+ *
+ * Reviewers may read a document and change its status; letting them replace the
+ * bytes would destroy the thing under review and leave no trace of the original.
+ */
+function assertCanWriteDocumentFile(document: DocumentEntity, actor: DocumentActor): void {
+  if (actor.role !== UserRole.Customer || document.customerId !== actor.id) {
+    throw new HttpError(403, "Forbidden");
+  }
 }
 
 export const documentService = {
@@ -126,18 +169,11 @@ export const documentService = {
     };
   },
 
-  async uploadLocalDocument(customerId: string, documentId: string, file: LocalDocumentUpload) {
+  async uploadLocalDocument(actor: DocumentActor, documentId: string, file: LocalDocumentUpload) {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    if (document.customerId !== customerId) {
-      throw new HttpError(403, "Forbidden");
-    }
-
-    const user = await requireUser(customerId);
-    if (user.role !== "customer") {
-      throw new HttpError(403, "Forbidden");
-    }
+    assertCanWriteDocumentFile(document, actor);
 
     const safeName = sanitizeFileName(file.originalName || document.fileName);
     const storageKey = document.s3Key || createDocumentStorageKey(safeName);
@@ -151,36 +187,47 @@ export const documentService = {
     return normalizeDocument(saved);
   },
 
-  async getDocumentDownloadTarget(customerId: string, documentId: string) {
+  async getDocumentDownloadTarget(actor: DocumentActor, documentId: string) {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    if (document.customerId !== customerId) {
-      throw new HttpError(403, "Forbidden");
-    }
+    assertCanReadDocument(document, actor);
+
+    const signedUrl = await getDownloadUrl({ key: document.s3Key });
 
     return {
       document: await normalizeDocument(document),
-      downloadUrl: await resolveDownloadUrl(document),
-      downloadMode: (await getDownloadUrl({ key: document.s3Key })) ? "s3" : "local",
+      downloadUrl: signedUrl ?? buildLocalDownloadUrl(document.id),
+      downloadMode: signedUrl ? "s3" : "local",
     };
   },
 
-  async getDocumentLocalPath(customerId: string, documentId: string) {
-    const document = await requireDocument(documentId);
+  async getDocumentLocalPath(actor: DocumentActor, documentId: string) {
+    assertDatabaseReady();
 
-    if (document.customerId !== customerId) {
-      throw new HttpError(403, "Forbidden");
-    }
+    const document = await requireDocument(documentId);
+    assertCanReadDocument(document, actor);
 
     return document;
   },
 
-  async updateDocumentStatus(documentId: string, input: UpdateDocumentStatusInput, changedByUserId: string) {
+  /** Detail view. The access rule is the shared one, so reviewers can open it. */
+  async getDocument(actor: DocumentActor, documentId: string) {
     assertDatabaseReady();
 
-    const user = await requireUser(changedByUserId);
-    if (!canMutateDocumentStatus(user.role)) {
+    const document = await requireDocument(documentId);
+    assertCanReadDocument(document, actor);
+
+    return normalizeDocument(document);
+  },
+
+  async updateDocumentStatus(actor: DocumentActor, documentId: string, input: UpdateDocumentStatusInput) {
+    assertDatabaseReady();
+
+    // `authenticate` already read this user's current row, so the role here is
+    // authoritative — no second lookup, and no chance of acting on the stale role
+    // baked into a token.
+    if (!canMutateDocumentStatus(actor.role)) {
       throw new HttpError(403, "Forbidden");
     }
 
@@ -199,7 +246,7 @@ export const documentService = {
         documentId: document.id,
         fromStatus: document.status,
         toStatus: input.toStatus,
-        changedBy: user.id,
+        changedBy: actor.id,
         note: input.note ?? null,
       }),
     );

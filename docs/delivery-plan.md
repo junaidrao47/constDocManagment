@@ -88,11 +88,13 @@ Docker stack, environment validation, migrations, auth module, RBAC middleware, 
 
 *Gate:* `docker compose up -d` reaches healthy; `GET /health/ready` returns 200. **Not yet verified by a real run** — see the closing note.
 
-### Phase 1 — Security and auth correctness · Week 1
+### Phase 1 — Security and auth correctness · code complete (2026-09-04), unrun
 
 Close all nine defects in section 3. Decide item A above and implement it. Add `POST /api/admin/users` so agent and manager accounts can be created through the API. Type `authorize()` against `UserRole`. Split the `manager` boundary out of `/api/admin`. Add an `is_active` check to `authenticate`, cached in Redis so it costs one lookup per token lifetime rather than one per request. Introduce the MIME allow-list.
 
 *Gate:* the reset-token leak is gone and covered by a test; an agent can fetch and download a document they are reviewing; a deactivated user is refused within seconds rather than 15 minutes; a manager receives 403 on admin-only routes.
+
+All four gate conditions now have tests — `apps/api/test/auth-reset-token.test.ts` for the first, `apps/api/test/phase1-gate.test.ts` for the other three. **The suite has not been executed yet**, so the gate is written but not passed. It needs `npm install` (for the added `@types/jest`), `npm run typecheck`, `npm run typecheck:test`, `npm test`, and one `docker compose up` so migration `AddSessionInvalidation1700000001000` applies to a real database. Until that run happens, treat Phase 1 the same way as Phase 0: written, reviewed, unproven.
 
 ### Phase 2 — Shared status and notification fabric · Weeks 1–2
 

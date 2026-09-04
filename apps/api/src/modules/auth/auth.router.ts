@@ -32,11 +32,11 @@ authRouter.post(["/refresh", "/refresh-token"], validate(RefreshSchema), sendAsy
 authRouter.post(
   "/logout",
   validate(LogoutSchema),
-  sendAsync((body, headers) =>
-    authService.logout({
-      refreshToken: body.refreshToken ?? headers.authorization?.split(" ")[1],
-    }),
-  ),
+  // Body only. The previous version fell back to the Authorization header, which
+  // carries an *access* token — passed to the refresh-token verifier it always
+  // threw, so logout could never succeed that way. Requiring the refresh token in
+  // the body also keeps the revoked credential out of proxy and access logs.
+  sendAsync((body) => authService.logout({ refreshToken: body.refreshToken })),
 );
 
 authRouter.post("/forgot-password", validate(ForgotPasswordSchema), sendAsync((body) => authService.forgotPassword(body)));

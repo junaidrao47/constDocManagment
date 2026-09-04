@@ -238,6 +238,89 @@ Publish Postgres and Redis on non-default host ports in development — `127.0.0
 ### Result
 The stack starts on a default Windows/Docker Desktop install. `DATABASE_URL` and `REDIS_URL` in `.env` now carry the same host ports so host-side tooling keeps working. Production is unaffected — `compose.prod.yml` does not publish either service.
 
+## 2026-09-04
+
+### Decision
+Replace JWT password-reset tokens with opaque random values held in Redis, add a `typ` claim to every issued JWT, and require the current password before an email address can change.
+
+### Why
+`POST /api/auth/forgot-password` returned a JWT signed with `JWT_SECRET` — the same key `authenticate` verifies against — and `authenticate` never asked what a token was *for*. A reset token was therefore a working session credential, and the token was in the response body, so knowing an address was enough to take over the account. Fixing only the visible half (the token in the body) would have left the cross-use open. A signed token also cannot be withdrawn once issued, whereas a server-side value is revocable by construction, expires by TTL, and can be consumed atomically so a link works exactly once. Only the SHA-256 hash is stored, so a Redis dump does not hand over usable links — the same reasoning already applied to refresh tokens. The email rule closes the other end: email is the identity reset trusts, so an attacker holding a stolen access token could otherwise point the account at their own address and make the takeover permanent.
+
+### Result
+The reset token exists only inside the email. `forgot-password` returns a byte-identical response for known and unknown addresses, and for disabled accounts, so it is no longer an enumeration oracle. `authenticate` requires `typ === "access"`, which retires every pre-`typ` token. `consumePasswordResetToken` reads and deletes inside one MULTI rather than relying on GETDEL, so single use holds under a race and on any Redis version. Covered by `apps/api/test/auth-reset-token.test.ts`.
+
+## 2026-09-04
+
+### Decision
+Resolve the caller's current database row on every authenticated request — active flag, role, and a new `tokens_valid_from` cut-off — and cache it in Redis for 30 seconds.
+
+### Why
+A signed access token is a snapshot taken at login. Nothing in it changes when an admin disables the account or demotes the role, so a 15-minute token is a 15-minute window in which a fired employee keeps their old access. The gate wording is "within seconds", which rules out waiting for expiry. Reading the row per request without a cache would add a query to every call; 30 seconds is short enough to satisfy the requirement on its own and acts as the ceiling on staleness if an explicit invalidation is ever missed. `tokens_valid_from` exists because revoking refresh tokens alone leaves an already-issued access token live — it moves a cut-off that stateless tokens are then compared against. The comparison truncates both sides to whole seconds, since `iat` has one-second resolution and a millisecond cut-off would reject the token minted by the very login that follows a password reset.
+
+### Result
+Migration `AddSessionInvalidation1700000001000` adds the column. `authenticate` takes the role from the row rather than the token, so a demotion is honoured on the next request; every path that changes `role`, `is_active` or `tokens_valid_from` calls `invalidateSessionCache`. A Redis outage falls through to the database rather than locking everyone out, but an unresolvable account is refused with 503 instead of admitted on the strength of a token.
+
+## 2026-09-04
+
+### Decision
+Make `/api/admin` admin-only, give `manager` its powers on the routes the role actually needs, add `POST /api/admin/users`, and type `authorize()` against the `UserRole` enum.
+
+### Why
+The admin surface was mounted `authorize("admin", "manager")` as a single block, which handed managers user management, pricing configuration and analytics — none of which the scope document gives them — while `PATCH /api/documents/:id/status` omitted `manager` entirely, so the role accountable for approvals could not approve anything. Both halves were the same mistake: role checks written per mount, in strings. `authorize` accepting `string` had a silent failure mode, since `authorize("Admin")` compiled and then denied everyone; against the enum a typo is a build error. `POST /api/admin/users` exists because `POST /api/auth/register` pins the role to `customer`, which left manual SQL `INSERT`s as the only way an agent, manager, or admin account could exist.
+
+### Result
+Managers get 403 on every `/api/admin` route and 200 on the document decisions they own. Staff accounts are created through the API, with the address normalised to lower case on the way in and no password hash in any response. An admin cannot disable their own account, which would otherwise be an unrecoverable lockout. `STAFF_ROLES` is named once rather than spelled out per route, so widening or narrowing "staff" is a single edit.
+
+## 2026-09-04
+
+### Decision
+Open document reads to staff and decide ownership in one service-level helper rather than at each route.
+
+### Why
+Every read route was `authorize(UserRole.Customer)`, so an agent or manager could not open a document they were assigned to review — the product's core workflow was unreachable through its own API. Moving the decision into `assertCanReadDocument` rather than duplicating it per route is the more important half: the previous per-method copies had already diverged, and Phase 4 adds agent-to-customer assignment scoping, which has to land in exactly one place to be worth trusting.
+
+### Result
+The owning customer or any staff member can read; one customer still gets 403 on another's document, and no credential is 401 rather than 403. Writes stay with the customer — a reviewer cannot replace the bytes under review. Staff currently see all documents: narrowing agents to their assigned customers needs the assignment table, which does not exist yet, and is marked `TODO(phase-4)` in the helper rather than left implicit.
+
+## 2026-09-04
+
+### Decision
+Constrain uploads with a MIME-plus-extension allow-list, give the credential endpoints their own rate limit, trust exactly one proxy hop, and stop unhandled errors from describing themselves in the response.
+
+### Why
+Upload validation checked size only, so an HTML or SVG file could be stored and later served from our own origin — that is how a stored XSS reaches a portal that previews attachments. Both the reported MIME type and the extension must match, and the pairing is deliberate rather than either alone; a client controls both, so this is the cheap check, not proof of content, and real sniffing belongs with the antivirus job in Phase 2. The general limit of 100 requests a minute is generous enough to walk a password list all day, so login, register, forgot-password and reset-password are counted separately at ten *failures* per quarter hour — counting only failures means a person who mistypes once and then succeeds is not penalised, and a burst of guesses cannot consume the caller's whole quota and turn a guessing attempt into a denial of service. `trust proxy` is set to `1` and not `true`: nginx terminates the connection, so without it every request appears to come from the proxy and all clients share one bucket, but trusting the whole chain would let a client forge `X-Forwarded-For` and mint a fresh quota per request. Unhandled errors were returned verbatim, which for a `QueryFailedError` means the response names tables and columns.
+
+### Why the SQLSTATE is read from two places
+TypeORM copies the Postgres error code onto the `QueryFailedError` wrapper in some versions and leaves it only on `driverError` in others. Checking a single location would have silently missed unique violations and reported them as 500.
+
+### Result
+Nine allowed types covering PDFs, office documents and certificate photographs; anything else is 415, an oversized file 413, and multer's own errors take the API's error shape instead of becoming a 500. A unique violation is 409 with a fixed message. Every other unexpected failure is a generic 500 in the response and a full stack trace in the log, where it belongs.
+
+## 2026-09-04
+
+### Decision
+Test the API with Postgres, Redis and SES replaced by in-memory fakes at the `config/` and `utils/` module boundary, using Jest's `moduleNameMapper`, so the Phase 1 gate is provable with nothing running.
+
+### Why
+The gate requires a test, but the client has not been able to verify the AWS or email credentials, so nothing may be built that depends on them working and nothing depending on them may be reported as working. An integration suite needing `docker compose up` would not have been runnable at all. Substituting whole modules rather than injecting seams works here because every service already fetches its repository lazily inside the calling function and guards on `AppDataSource.isInitialized` — so not one source file needed a test hook added to it, which was the deciding factor. `utils/email` is mapped globally rather than per file specifically so that no test can reach SES even by accident, and `AWS_REGION`/`S3_BUCKET` are deleted from the environment so `utils/s3` reports S3 as unconfigured and the local `res.download` path — the one that actually runs today — is the one under test. `DOTENV_CONFIG_PATH` points at an empty file, because otherwise a developer's `.env` would decide whether a download returns bytes or a presigned redirect.
+
+### Result
+`npm test` in `apps/api` runs the gate on a laptop with no database, no cache, and no credentials. The fake repository throws on any TypeORM find operator it does not implement rather than returning an empty result, because a fake that silently answers "no rows" turns a real defect into a passing test. Integration tests against live Postgres are a separate suite, added alongside the worker in Phase 2.
+
+## 2026-09-04
+
+### Decision
+Silence morgan's access log and `logger.info`/`logger.debug` when `NODE_ENV=test`, keeping `warn` and `error`. Route the decision through `utils/logger` and one conditional in `app.ts` rather than per call site.
+
+### Why
+The suite makes roughly thirty requests per file, each producing a combined-format access line plus the informational lines the API writes on login and on every document status change. A failed assertion was arriving buried in that, which is the state in which people stop reading output and start guessing. Warnings and errors are deliberately kept: those are the lines that *explain* a failure. `utils/logger` reads `process.env.NODE_ENV` directly instead of importing `config/env`, because `config/env` may itself log and the import would be circular.
+
+### Result
+One conditional in `app.ts` and one flag in `utils/logger`. Non-test behaviour is byte-for-byte unchanged, and swapping in a structured logger with request correlation in Phase 6 still touches only `utils/logger`, since nothing in the codebase calls `console` directly.
+
+
+
+
 
 
 

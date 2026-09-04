@@ -5,8 +5,23 @@ export class InitialSchema1700000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
-    await queryRunner.query(`CREATE TYPE IF NOT EXISTS "public"."user_role_enum" AS ENUM ('customer', 'agent', 'manager', 'admin')`);
-    await queryRunner.query(`CREATE TYPE IF NOT EXISTS "public"."document_status_enum" AS ENUM ('pending', 'under_review', 'approved', 'rejected', 'expiring_soon', 'expired')`);
+
+    // Postgres has no CREATE TYPE ... IF NOT EXISTS, so guard on duplicate_object
+    // to keep this migration safe to re-run against a partially migrated database.
+    await queryRunner.query(`
+      DO $$ BEGIN
+        CREATE TYPE "public"."user_role_enum" AS ENUM ('customer', 'agent', 'manager', 'admin');
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
+    await queryRunner.query(`
+      DO $$ BEGIN
+        CREATE TYPE "public"."document_status_enum" AS ENUM ('pending', 'under_review', 'approved', 'rejected', 'expiring_soon', 'expired');
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "users" (
@@ -65,6 +80,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
+    // Matches @Index() on WorkerRangeEntity.isActive — pricing lookups filter on it.
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_worker_ranges_is_active" ON "worker_ranges" ("is_active")`);
+
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "locations" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -78,6 +96,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
         CONSTRAINT "PK_locations_id" PRIMARY KEY ("id")
       )
     `);
+
+    // Matches @Index() on LocationEntity.isActive.
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_locations_is_active" ON "locations" ("is_active")`);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "industries" (
@@ -104,7 +125,7 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_refresh_tokens_user_id" ON "refresh_tokens" ("user_id")`);
-    await queryRunner.query(`ALTER TABLE "refresh_tokens" ADD CONSTRAINT "FK_refresh_tokens_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    await queryRunner.query(`ALTER TABLE "refresh_tokens" DROP CONSTRAINT IF EXISTS "FK_refresh_tokens_user", ADD CONSTRAINT "FK_refresh_tokens_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "quotations" (
@@ -124,9 +145,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_quotations_customer_id" ON "quotations" ("customer_id")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_quotations_industry_id" ON "quotations" ("industry_id")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_quotations_location_id" ON "quotations" ("location_id")`);
-    await queryRunner.query(`ALTER TABLE "quotations" ADD CONSTRAINT "FK_quotations_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "quotations" ADD CONSTRAINT "FK_quotations_industry" FOREIGN KEY ("industry_id") REFERENCES "industries"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "quotations" ADD CONSTRAINT "FK_quotations_location" FOREIGN KEY ("location_id") REFERENCES "locations"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "quotations"
+        DROP CONSTRAINT IF EXISTS "FK_quotations_customer",
+        ADD CONSTRAINT "FK_quotations_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_quotations_industry",
+        ADD CONSTRAINT "FK_quotations_industry" FOREIGN KEY ("industry_id") REFERENCES "industries"("id") ON DELETE RESTRICT ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_quotations_location",
+        ADD CONSTRAINT "FK_quotations_location" FOREIGN KEY ("location_id") REFERENCES "locations"("id") ON DELETE RESTRICT ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "quotation_items" (
@@ -142,8 +169,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_quotation_items_quotation_id" ON "quotation_items" ("quotation_id")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_quotation_items_service_id" ON "quotation_items" ("service_id")`);
-    await queryRunner.query(`ALTER TABLE "quotation_items" ADD CONSTRAINT "FK_quotation_items_quotation" FOREIGN KEY ("quotation_id") REFERENCES "quotations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "quotation_items" ADD CONSTRAINT "FK_quotation_items_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "quotation_items"
+        DROP CONSTRAINT IF EXISTS "FK_quotation_items_quotation",
+        ADD CONSTRAINT "FK_quotation_items_quotation" FOREIGN KEY ("quotation_id") REFERENCES "quotations"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_quotation_items_service",
+        ADD CONSTRAINT "FK_quotation_items_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE RESTRICT ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "subscriptions" (
@@ -160,8 +192,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_subscriptions_customer_id" ON "subscriptions" ("customer_id")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_subscriptions_package_id" ON "subscriptions" ("package_id")`);
-    await queryRunner.query(`ALTER TABLE "subscriptions" ADD CONSTRAINT "FK_subscriptions_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "subscriptions" ADD CONSTRAINT "FK_subscriptions_package" FOREIGN KEY ("package_id") REFERENCES "packages"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "subscriptions"
+        DROP CONSTRAINT IF EXISTS "FK_subscriptions_customer",
+        ADD CONSTRAINT "FK_subscriptions_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_subscriptions_package",
+        ADD CONSTRAINT "FK_subscriptions_package" FOREIGN KEY ("package_id") REFERENCES "packages"("id") ON DELETE RESTRICT ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "documents" (
@@ -178,8 +215,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_documents_customer_id" ON "documents" ("customer_id")`);
-    await queryRunner.query(`ALTER TABLE "documents" ADD CONSTRAINT "FK_documents_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "documents" ADD CONSTRAINT "FK_documents_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "documents"
+        DROP CONSTRAINT IF EXISTS "FK_documents_customer",
+        ADD CONSTRAINT "FK_documents_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_documents_service",
+        ADD CONSTRAINT "FK_documents_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "document_status_history" (
@@ -195,8 +237,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_document_status_history_document_id" ON "document_status_history" ("document_id")`);
-    await queryRunner.query(`ALTER TABLE "document_status_history" ADD CONSTRAINT "FK_document_status_history_document" FOREIGN KEY ("document_id") REFERENCES "documents"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "document_status_history" ADD CONSTRAINT "FK_document_status_history_changed_by" FOREIGN KEY ("changed_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "document_status_history"
+        DROP CONSTRAINT IF EXISTS "FK_document_status_history_document",
+        ADD CONSTRAINT "FK_document_status_history_document" FOREIGN KEY ("document_id") REFERENCES "documents"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_document_status_history_changed_by",
+        ADD CONSTRAINT "FK_document_status_history_changed_by" FOREIGN KEY ("changed_by") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "invoices" (
@@ -213,8 +260,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_invoices_customer_id" ON "invoices" ("customer_id")`);
-    await queryRunner.query(`ALTER TABLE "invoices" ADD CONSTRAINT "FK_invoices_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "invoices" ADD CONSTRAINT "FK_invoices_subscription" FOREIGN KEY ("subscription_id") REFERENCES "subscriptions"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "invoices"
+        DROP CONSTRAINT IF EXISTS "FK_invoices_customer",
+        ADD CONSTRAINT "FK_invoices_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_invoices_subscription",
+        ADD CONSTRAINT "FK_invoices_subscription" FOREIGN KEY ("subscription_id") REFERENCES "subscriptions"("id") ON DELETE SET NULL ON UPDATE NO ACTION
+    `);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "payments" (
@@ -230,7 +282,7 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payments_invoice_id" ON "payments" ("invoice_id")`);
-    await queryRunner.query(`ALTER TABLE "payments" ADD CONSTRAINT "FK_payments_invoice" FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    await queryRunner.query(`ALTER TABLE "payments" DROP CONSTRAINT IF EXISTS "FK_payments_invoice", ADD CONSTRAINT "FK_payments_invoice" FOREIGN KEY ("invoice_id") REFERENCES "invoices"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "notifications_log" (
@@ -246,7 +298,7 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notifications_log_user_id" ON "notifications_log" ("user_id")`);
-    await queryRunner.query(`ALTER TABLE "notifications_log" ADD CONSTRAINT "FK_notifications_log_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    await queryRunner.query(`ALTER TABLE "notifications_log" DROP CONSTRAINT IF EXISTS "FK_notifications_log_user", ADD CONSTRAINT "FK_notifications_log_user" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "package_services" (
@@ -257,8 +309,13 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_package_services_package_id" ON "package_services" ("package_id")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_package_services_service_id" ON "package_services" ("service_id")`);
-    await queryRunner.query(`ALTER TABLE "package_services" ADD CONSTRAINT "FK_package_services_package" FOREIGN KEY ("package_id") REFERENCES "packages"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-    await queryRunner.query(`ALTER TABLE "package_services" ADD CONSTRAINT "FK_package_services_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    await queryRunner.query(`
+      ALTER TABLE "package_services"
+        DROP CONSTRAINT IF EXISTS "FK_package_services_package",
+        ADD CONSTRAINT "FK_package_services_package" FOREIGN KEY ("package_id") REFERENCES "packages"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+        DROP CONSTRAINT IF EXISTS "FK_package_services_service",
+        ADD CONSTRAINT "FK_package_services_service" FOREIGN KEY ("service_id") REFERENCES "services"("id") ON DELETE CASCADE ON UPDATE NO ACTION
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

@@ -13,6 +13,8 @@ import { quotationRouter } from "./modules/quotations/quotation.router";
 import { pricingRouter } from "./modules/pricing/pricing.router";
 import { packageRouter } from "./modules/packages/package.router";
 import { userRouter } from "./modules/users/user.router";
+import { publicRouter } from "./modules/public/public.router";
+import { agentRouter } from "./modules/agent/agent.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
 import { errorHandler } from "./middleware/errorHandler";
@@ -118,7 +120,9 @@ export function createApp() {
   app.use("/api/users", authenticate, userRouter);
   app.use("/api/customers", authenticate, authorize(UserRole.Customer), customerRouter);
   app.use("/api/documents", authenticate, documentRouter);
-  app.use("/api/quotations", quotationRouter);
+  app.use("/api/agent", authenticate, agentRouter);
+  app.use("/api/public", publicRouter);
+  app.use("/api/quotations", authenticate, quotationRouter);
   app.use("/api/pricing", pricingRouter);
   app.use("/api/packages", packageRouter);
   // Admin only. `manager` used to be listed here and so inherited the entire admin

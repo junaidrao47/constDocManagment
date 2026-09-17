@@ -1,4 +1,4 @@
-@baseUrl = http://localhost:3000/api
+@baseUrl = http://localhost:3001/api
 @token = your_auth_token_here
 
 ### ====================================================================

@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Base URL
-BASE_URL="http://localhost:3000/api"
+BASE_URL="http://localhost:3001/api"
 
 # Test counters
 TOTAL_TESTS=0

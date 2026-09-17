@@ -23,7 +23,7 @@ const durationSchema = (fallback: string) =>
 const EnvSchema = z
   .object({
     nodeEnv: z.enum(["development", "test", "production"]).default("development"),
-    port: z.coerce.number().int().positive().max(65535).default(3000),
+    port: z.coerce.number().int().positive().max(65535).default(3001),
     apiUrl: z.string().url().optional(),
     corsOrigin: z.string().min(1).optional(),
 
@@ -45,6 +45,7 @@ const EnvSchema = z
     // Envelope sender for outgoing mail. Without it the email transport falls
     // back to logging the message instead of delivering it.
     mailFrom: z.string().email().optional(),
+    sesConfigurationSet: z.string().min(1).optional(),
 
     // Base URL of the browser app, used to build links inside emails such as the
     // password-reset link. Falls back to the first CORS origin when unset.
@@ -108,6 +109,7 @@ const parsed = EnvSchema.safeParse({
   s3Bucket: optional(process.env.S3_BUCKET),
   s3BackupBucket: optional(process.env.S3_BACKUP_BUCKET),
   mailFrom: optional(process.env.MAIL_FROM),
+  sesConfigurationSet: optional(process.env.SES_CONFIGURATION_SET),
   webUrl: optional(process.env.WEB_URL),
 });
 
@@ -127,6 +129,7 @@ if (!parsed.success) {
     s3Bucket: "S3_BUCKET",
     s3BackupBucket: "S3_BACKUP_BUCKET",
     mailFrom: "MAIL_FROM",
+    sesConfigurationSet: "SES_CONFIGURATION_SET",
     webUrl: "WEB_URL",
   };
 

@@ -299,7 +299,7 @@
                 }
               ],
               "variable": [
-                { "key": "baseUrl", "value": "http://localhost:3000/api" },
+                { "key": "baseUrl", "value": "http://localhost:3001/api" },
                 { "key": "adminToken", "value": "" },
                 { "key": "adminRefreshToken", "value": "" },
                 { "key": "customerToken", "value": "" },
@@ -483,7 +483,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:3000/api"
+      "value": "http://localhost:3001/api"
     },
     {
       "key": "adminToken",

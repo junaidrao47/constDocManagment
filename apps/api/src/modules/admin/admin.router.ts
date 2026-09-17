@@ -4,6 +4,10 @@ import { HttpError } from "../../utils/http-error";
 import { CreateUserSchema, UpdateUserSchema } from "../users/user.schema";
 import { adminUserService, ListUsersQuery } from "./admin-user.service";
 import { ListUsersQuerySchema, SetUserStatusSchema, UserIdParamSchema } from "./admin.schema";
+import { AdminEmailSchema } from "./admin-email.schema";
+import { sendEmail } from "../../utils/email";
+import { quotationService } from "../quotations/quotation.service";
+import { QuotationIdParamSchema, QuotationStatusSchema } from "../quotations/quotation.schema";
 
 /**
  * Admin surface. Mounted behind `authenticate` + `authorize(UserRole.Admin)` in
@@ -46,6 +50,11 @@ adminRouter.post(
   send((req) => adminUserService.createUser(req.body, actorId(req)), 201),
 );
 
+adminRouter.get("/quotations", send((req) => quotationService.list({ id: actorId(req), role: req.user!.role })));
+adminRouter.get("/quotations/:id", validateParams(QuotationIdParamSchema), send((req) => quotationService.get(req.params.id, { id: actorId(req), role: req.user!.role })));
+adminRouter.patch("/quotations/:id/status", validateParams(QuotationIdParamSchema), validate(QuotationStatusSchema), send((req) => quotationService.transition(req.params.id, req.body.status, { id: actorId(req), role: req.user!.role }, req.body.note)));
+adminRouter.get("/quotations/:id/history", validateParams(QuotationIdParamSchema), send((req) => quotationService.history(req.params.id, { id: actorId(req), role: req.user!.role })));
+
 adminRouter.get(
   "/users/:id",
   validateParams(UserIdParamSchema),
@@ -64,6 +73,12 @@ adminRouter.patch(
   validateParams(UserIdParamSchema),
   validate(SetUserStatusSchema),
   send((req) => adminUserService.setUserStatus(req.params.id, req.body.isActive, actorId(req))),
+);
+
+adminRouter.post(
+  "/notifications/email",
+  validate(AdminEmailSchema),
+  send(async (req) => sendEmail(req.body)),
 );
 
 // --- Placeholders -----------------------------------------------------------

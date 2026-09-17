@@ -14,7 +14,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-BASE_URL="http://localhost:3000/api"
+BASE_URL="http://localhost:3001/api"
 
 # Function to print headers
 print_header() {

@@ -25,9 +25,11 @@ export const UpdateUserSchema = z
     email: emailSchema.optional(),
     role: roleSchema.optional(),
     isActive: z.boolean().optional(),
+    name: z.string().trim().min(1).max(150).optional(),
+    phone: z.string().trim().min(6).max(30).optional(),
   })
   .refine((value) => Object.values(value).some((field) => field !== undefined), {
-    message: "at least one of email, role, or isActive is required",
+    message: "at least one account field is required",
   });
 
 /**

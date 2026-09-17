@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { closeDatabase, initializeDatabase } from "./config/database";
 import { closeRedis, initializeRedis } from "./config/redis";
 import { env } from "./config/env";
+import { runRenewalCron } from "./crons/renewal.cron";
 
 /**
  * Worker entry point.
@@ -21,10 +22,9 @@ export async function startWorker(): Promise<void> {
   await initializeRedis();
   console.log("[worker] redis connected");
 
-  // TODO: register BullMQ workers (email, document, renewal) and cron schedules.
-  // Nothing is registered yet, so the process intentionally just idles below.
+  runRenewalCron();
 
-  console.log(`[worker] ready in ${env.nodeEnv} mode, waiting for jobs`);
+  console.log(`[worker] ready in ${env.nodeEnv} mode, renewal cron registered`);
 }
 
 async function shutdown(signal: string, exitCode = 0): Promise<void> {

@@ -10,6 +10,7 @@ import { DocumentStatus } from "../../src/modules/documents/document-status";
 import { TOKEN_TYPE_ACCESS, TOKEN_TYPE_REFRESH } from "../../src/modules/auth/token";
 import { UserRole } from "../../src/modules/users/user.entity";
 import { fakeDb, resetFakeDatabase } from "./database.fake";
+export { fakeDb } from "./database.fake";
 import { resetOutbox } from "./email.fake";
 import { resetFakeRedis } from "./redis.fake";
 

@@ -38,6 +38,8 @@ export interface UpdateUserInput {
   email?: string;
   role?: UserRole;
   isActive?: boolean;
+  name?: string;
+  phone?: string;
 }
 
 function assertDatabaseReady(): void {
@@ -84,14 +86,13 @@ export const adminUserService = {
       where.isActive = query.isActive;
     }
 
-    // ILike on email only. Matching name as well would need an OR, which means two
-    // where-branches and duplicated filters; not worth it until the UI asks.
+    const filters: FindOptionsWhere<UserEntity>[] = [where];
     if (query.search) {
-      where.email = ILike(`%${query.search}%`);
+      filters.splice(0, filters.length, ...(["email", "name", "phone"] as const).map((field) => ({ ...where, [field]: ILike(`%${query.search}%`) })));
     }
 
     const [users, total] = await AppDataSource.getRepository(UserEntity).findAndCount({
-      where,
+      where: filters,
       order: { createdAt: "DESC" },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
@@ -167,6 +168,11 @@ export const adminUserService = {
     const roleChanged = input.role !== undefined && input.role !== user.role;
     const activeChanged = input.isActive !== undefined && input.isActive !== user.isActive;
 
+    if ((roleChanged && user.role === UserRole.Admin && input.role !== UserRole.Admin) || (activeChanged && user.role === UserRole.Admin && input.isActive === false)) {
+      const activeAdmins = await userRepository.count({ where: { role: UserRole.Admin, isActive: true } });
+      if (activeAdmins <= 1) throw new HttpError(400, "At least one active administrator must remain");
+    }
+
     if (input.role !== undefined) {
       user.role = input.role;
     }
@@ -174,6 +180,8 @@ export const adminUserService = {
     if (input.isActive !== undefined) {
       user.isActive = input.isActive;
     }
+    if (input.name !== undefined) user.name = input.name;
+    if (input.phone !== undefined) user.phone = input.phone;
 
     const saved = await userRepository.save(user);
 

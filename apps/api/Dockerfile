@@ -25,7 +25,7 @@ RUN npm install
 FROM deps AS development
 ENV NODE_ENV=development
 COPY . .
-EXPOSE 3000
+EXPOSE 3001
 CMD ["npm", "run", "dev"]
 
 # ---------------------------------------------------------------------------
@@ -49,5 +49,5 @@ COPY --from=builder /app/dist ./dist
 RUN mkdir -p /app/storage && chown -R node:node /app
 USER node
 
-EXPOSE 3000
+EXPOSE 3001
 CMD ["node", "dist/server.js"]

@@ -91,7 +91,7 @@ test/
 
 ```bash
 # Test register
-curl -X POST http://localhost:3000/api/auth/register \
+curl -X POST http://localhost:3001/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "newuser@test.com",
@@ -101,7 +101,7 @@ curl -X POST http://localhost:3000/api/auth/register \
   }'
 
 # Test login
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@test.com",
@@ -109,11 +109,66 @@ curl -X POST http://localhost:3000/api/auth/login \
   }'
 
 # Test with authentication
-curl -X GET http://localhost:3000/api/customers \
+curl -X GET http://localhost:3001/api/customers \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
 ### Method 3: Automated Testing Scripts
+
+#### Create and verify a staff account on the Docker API
+
+Public registration intentionally creates **customer** accounts only. To test a
+staff login, an existing admin must create the staff account through the admin
+API. With the Docker development stack running on port `3001`:
+
+```powershell
+$env:ADMIN_EMAIL = "your-admin@example.com"
+$env:ADMIN_PASSWORD = "your-admin-password"
+.\test\register-and-login-staff.ps1 -StaffRole agent
+```
+
+The script checks API health, logs in as the admin, creates a unique staff
+account, logs in as that account, and verifies `GET /api/users/me`. Use the
+returned email and `StaffPassword123!` on the admin frontend at `http://localhost:3000`.
+
+## SES application setup
+
+The API supports `SES_CONFIGURATION_SET` and dedicated `SES_ACCESS_KEY_ID` /
+`SES_SECRET_ACCESS_KEY` variables. Attach `docs/aws-ses-policy.json` to the
+dedicated SES IAM user, set `MAIL_FROM` to the verified sender, and restart the
+API. The admin-only trigger is:
+
+```http
+POST /api/admin/notifications/email
+Authorization: Bearer ADMIN_ACCESS_TOKEN
+Content-Type: application/json
+
+{
+   "to": "contacto@grupog2h.com",
+   "subject": "ConstDoc SES test",
+   "text": "Transactional email path is working.",
+   "html": "<p>Transactional email path is working.</p>"
+}
+```
+
+The sender automatically attaches `SES_CONFIGURATION_SET` to the SES request.
+The renewal worker remains a separate implementation step; the current worker
+does not register cron jobs or queue consumers yet.
+
+#### Create the first admin account
+
+When the database has no admin yet, bootstrap one from the API container. This
+does not expose a public admin-registration endpoint:
+
+```powershell
+Set-Location E:\ConstructionWebsite\constDocManagment
+$adminEmail = "admin@example.com"
+$adminPassword = "ChooseARealPassword123!"
+docker compose exec -e BOOTSTRAP_ADMIN_EMAIL=$adminEmail -e BOOTSTRAP_ADMIN_PASSWORD=$adminPassword api npm run admin:create
+```
+
+After that command succeeds, use the same credentials with
+`register-and-login-staff.ps1` to create and verify agent or manager accounts.
 
 #### On Linux/Mac:
 ```bash
@@ -239,7 +294,7 @@ password: ViewerPass123!
 Available in `global.http`:
 
 ```
-@baseUrl = http://localhost:3000/api
+@baseUrl = http://localhost:3001/api
 @adminEmail = admin@test.com
 @adminPassword = AdminPassword123!
 @adminToken = (populated after login)
@@ -253,7 +308,7 @@ Available in `global.http`:
 ### Local Development (.env.local)
 ```
 NODE_ENV=development
-API_URL=http://localhost:3000
+API_URL=http://localhost:3001
 API_PORT=3000
 DB_HOST=localhost
 DB_PORT=15432

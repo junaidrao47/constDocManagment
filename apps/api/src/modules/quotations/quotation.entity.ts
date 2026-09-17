@@ -40,6 +40,15 @@ export class QuotationEntity extends AppBaseEntity {
 	@Column({ type: "varchar", length: 50 })
 	status!: string;
 
+	@Column({ name: "rejection_reason", type: "text", nullable: true })
+	rejectionReason?: string | null;
+
+	@Column({ name: "sent_at", type: "timestamptz", nullable: true })
+	sentAt?: Date | null;
+
+	@Column({ name: "accepted_at", type: "timestamptz", nullable: true })
+	acceptedAt?: Date | null;
+
 	@Column({ name: "expires_at", type: "timestamptz", nullable: true })
 	expiresAt?: Date | null;
 

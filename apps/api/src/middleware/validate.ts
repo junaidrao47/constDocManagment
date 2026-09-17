@@ -7,7 +7,7 @@ export function validate(schema: ZodTypeAny) {
     const result = schema.safeParse(req.body);
 
     if (!result.success) {
-      res.status(400).json({ success: false, error: result.error.flatten() });
+      res.status(400).json({ success: false, error: "Validation failed", details: result.error.flatten() });
       return;
     }
 
@@ -28,7 +28,7 @@ export function validateQuery(schema: ZodTypeAny) {
     const result = schema.safeParse(req.query);
 
     if (!result.success) {
-      res.status(400).json({ success: false, error: result.error.flatten() });
+      res.status(400).json({ success: false, error: "Validation failed", details: result.error.flatten() });
       return;
     }
 
@@ -45,7 +45,7 @@ export function validateParams(schema: ZodTypeAny) {
     const result = schema.safeParse(req.params);
 
     if (!result.success) {
-      res.status(400).json({ success: false, error: result.error.flatten() });
+      res.status(400).json({ success: false, error: "Validation failed", details: result.error.flatten() });
       return;
     }
 

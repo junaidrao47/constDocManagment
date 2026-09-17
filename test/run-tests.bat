@@ -8,7 +8,8 @@ REM ========================================================================
 
 setlocal enabledelayedexpansion
 
-set BASE_URL=http://localhost:3000/api
+set BASE_URL=http://localhost:3001/api
+set HEALTH_URL=http://localhost:3001/health
 set TOTAL_TESTS=0
 set PASSED_TESTS=0
 set FAILED_TESTS=0
@@ -25,7 +26,7 @@ echo.
 
 REM Test API Health
 echo Testing API Health...
-curl -s %BASE_URL%/health | findstr /R ".*" >nul
+curl -s %HEALTH_URL% | findstr /R "status" >nul
 if !errorlevel! equ 0 (
     echo [PASS] API Health Check
     set /a PASSED_TESTS+=1

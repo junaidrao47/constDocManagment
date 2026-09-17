@@ -178,7 +178,7 @@ Interpreting "every port that must have" both ways: the container ports are here
 | Service | Container port | Dev host binding | Prod host binding | Notes |
 |---|---|---|---|---|
 | `nginx` | 80, 443 | `80` (only under `--profile proxy`) | `80`, `443` | Only service reachable from outside the Docker network in production. TLS block is a documented placeholder until certificates exist |
-| `api` | 3000 | `3000` | not published | Reached through nginx at `/api/`. `client_max_body_size` is 26 MB to sit just above multer's 25 MB cap |
+| `api` | 3001 | `3001` | published as `3001` | Reached directly at port 3001 or through nginx at `/api/`. `client_max_body_size` is 26 MB to sit just above multer's 25 MB cap |
 | `web` (Phase 6) | 3000 | `3001` | not published | New container. Proxied at `/` by nginx, which currently returns a placeholder string there |
 | `worker` | none | none | none | No listener. Consumes BullMQ queues only |
 | `postgres` | 5432 | `127.0.0.1:15432` | not published | Localhost-bound in dev so host tooling works without exposing it to the network. Host side is 15432, not 5432 — Windows reserves TCP blocks for Hyper-V/WSL and 5432 would not bind |
@@ -214,8 +214,8 @@ docker compose build --no-cache
 docker compose up -d
 docker compose ps
 docker compose logs -f api worker
-curl http://localhost:3000/health
-curl http://localhost:3000/health/ready
+curl http://localhost:3001/health
+curl http://localhost:3001/health/ready
 ```
 
 Two known conditions when it runs: there is no `package-lock.json`, so both Dockerfiles use `npm install` rather than `npm ci` and the `development` and `production` stages can resolve different versions of the same caret range — generating a lockfile is a Phase 1 task. And `worker` gates on `api: service_healthy`, so an unhealthy API silently prevents the worker from starting at all; read the API logs first.

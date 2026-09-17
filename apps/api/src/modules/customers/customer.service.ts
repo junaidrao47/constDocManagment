@@ -49,6 +49,27 @@ async function serializeDocument(document: DocumentEntity) {
 }
 
 export const customerService = {
+  async getCustomerDashboard(customerId: string) {
+    const [profile, documents, subscriptions, invoices] = await Promise.all([
+      customerService.getCustomerProfile(customerId),
+      customerService.getMyDocuments(customerId),
+      customerService.getMySubscriptions(customerId),
+      customerService.getMyInvoices(customerId),
+    ]);
+
+    return {
+      profile: profile.profile,
+      stats: profile.stats,
+      documents: documents.slice(0, 5),
+      subscriptions: subscriptions.slice(0, 5),
+      invoices: invoices.slice(0, 5),
+      attention: {
+        documents: documents.filter((document) => ["pending", "rejected", "expiring_soon", "expired"].includes(document.status)).length,
+        unpaidInvoices: invoices.filter((invoice) => invoice.status !== "paid").length,
+      },
+    };
+  },
+
   async getCustomerProfile(customerId: string) {
     assertDatabaseReady();
 

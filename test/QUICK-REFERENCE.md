@@ -7,7 +7,7 @@
 cd apps/api
 npm install
 npm start
-# Server runs on http://localhost:3000
+# API server runs on http://localhost:3001
 ```
 
 #### 2. Open REST Client Files
@@ -169,7 +169,7 @@ Authorization: Bearer <your_access_token>
 
 #### Available Variables (in global.http)
 ```
-@baseUrl           = http://localhost:3000/api
+@baseUrl           = http://localhost:3001/api
 @adminEmail        = admin@test.com
 @adminPassword     = AdminPassword123!
 @adminToken        = <your_token>
@@ -223,7 +223,7 @@ Body:
 
 #### Issue: Connection Refused
 ```
-✗ Error: connect ECONNREFUSED 127.0.0.1:3000
+✗ Error: connect ECONNREFUSED 127.0.0.1:3001
 
 Fix:
 1. Ensure server is running: npm start
@@ -360,7 +360,7 @@ In `global.http`, update:
 ```
 @baseUrl = http://staging-api.example.com/api  (for staging)
 @baseUrl = https://api.example.com/api         (for production)
-@baseUrl = http://localhost:3000/api           (for local)
+@baseUrl = http://localhost:3001/api           (for local)
 ```
 
 ---
@@ -442,7 +442,7 @@ Run test only if condition met
 #### Resources
 - Full docs: [test/README.md](./README.md)
 - Checklists: [test/TESTING-CHECKLIST.md](./TESTING-CHECKLIST.md)
-- API Swagger: http://localhost:3000/api/docs
+- API Swagger: http://localhost:3001/api/docs
 
 #### Common Issues
 - Check server logs: `npm start` terminal

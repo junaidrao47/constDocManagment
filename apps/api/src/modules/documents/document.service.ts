@@ -12,6 +12,7 @@ import {
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
+import { ServiceEntity } from "../../entities/service.entity";
 import {
   assertDocumentStatusTransition,
   canMutateDocumentStatus,
@@ -140,6 +141,18 @@ function assertCanWriteDocumentFile(document: DocumentEntity, actor: DocumentAct
 }
 
 export const documentService = {
+  async listReviewDocuments(status?: string) {
+    assertDatabaseReady();
+
+    const repository = AppDataSource.getRepository(DocumentEntity);
+    const documents = await repository.find({
+      where: status ? { status: status as DocumentStatus } : {},
+      order: { updatedAt: "DESC" },
+    });
+
+    return Promise.all(documents.map((document) => normalizeDocument(document)));
+  },
+
   canMutateDocumentStatus,
 
   getNextStatuses: (status: DocumentStatus) => status,
@@ -149,6 +162,13 @@ export const documentService = {
 
     const documentRepository = AppDataSource.getRepository(DocumentEntity);
     const safeFileName = sanitizeFileName(input.fileName);
+  if (!safeFileName || safeFileName === "." || safeFileName === "..") {
+    throw new HttpError(400, "File name must contain at least one supported character");
+  }
+  if (input.serviceId) {
+    const service = await AppDataSource.getRepository(ServiceEntity).findOne({ where: { id: input.serviceId, isActive: true } });
+    if (!service) throw new HttpError(400, "Selected service is not available");
+  }
     const s3Key = createDocumentStorageKey(safeFileName);
 
     const document = await documentRepository.save(
@@ -180,6 +200,9 @@ export const documentService = {
     assertCanWriteDocumentFile(document, actor);
 
     const safeName = sanitizeFileName(file.originalName || document.fileName);
+  if (!safeName || safeName === "." || safeName === "..") {
+    throw new HttpError(400, "File name must contain at least one supported character");
+  }
     const storageKey = document.s3Key || createDocumentStorageKey(safeName);
 
     await saveLocalDocument(file.buffer, storageKey);

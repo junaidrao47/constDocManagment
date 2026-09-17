@@ -2,6 +2,11 @@ import { DocumentStatusHistoryEntity } from "../../src/entities/document-status-
 import { RefreshTokenEntity } from "../../src/entities/refresh-token.entity";
 import { DocumentEntity } from "../../src/modules/documents/document.entity";
 import { UserEntity } from "../../src/modules/users/user.entity";
+import { ServiceEntity } from "../../src/entities/service.entity";
+import { WorkerRangeEntity } from "../../src/entities/worker-range.entity";
+import { LocationEntity } from "../../src/entities/location.entity";
+import { IndustryEntity } from "../../src/entities/industry.entity";
+import { PackageEntity } from "../../src/modules/packages/package.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -78,6 +83,11 @@ export const fakeDb = {
   refreshTokens: () => AppDataSource.getRepository(RefreshTokenEntity),
   documents: () => AppDataSource.getRepository(DocumentEntity),
   documentHistory: () => AppDataSource.getRepository(DocumentStatusHistoryEntity),
+  services: () => AppDataSource.getRepository(ServiceEntity),
+  workerRanges: () => AppDataSource.getRepository(WorkerRangeEntity),
+  locations: () => AppDataSource.getRepository(LocationEntity),
+  industries: () => AppDataSource.getRepository(IndustryEntity),
+  packages: () => AppDataSource.getRepository(PackageEntity),
 };
 
 export function resetFakeDatabase(): void {

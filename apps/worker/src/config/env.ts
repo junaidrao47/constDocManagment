@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   s3Bucket: z.string().min(1).optional(),
   s3BackupBucket: z.string().min(1).optional(),
   mailFrom: z.string().email().optional(),
+  sesConfigurationSet: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -39,6 +40,7 @@ const parsed = EnvSchema.safeParse({
   s3Bucket: optional(process.env.S3_BUCKET),
   s3BackupBucket: optional(process.env.S3_BACKUP_BUCKET),
   mailFrom: optional(process.env.MAIL_FROM),
+  sesConfigurationSet: optional(process.env.SES_CONFIGURATION_SET),
 });
 
 if (!parsed.success) {
@@ -50,6 +52,7 @@ if (!parsed.success) {
     s3Bucket: "S3_BUCKET",
     s3BackupBucket: "S3_BACKUP_BUCKET",
     mailFrom: "MAIL_FROM",
+    sesConfigurationSet: "SES_CONFIGURATION_SET",
   };
 
   const details = parsed.error.issues

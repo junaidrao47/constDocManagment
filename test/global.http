@@ -2,8 +2,8 @@
 ### This file contains all test credentials and common variables
 
 ### Environment Variables
-@baseUrl = http://localhost:3000/api
-@basePath = http://localhost:3000
+@baseUrl = http://localhost:3001/api
+@basePath = http://localhost:3001
 
 ### Test User Credentials - Admin
 @adminEmail = admin@test.com

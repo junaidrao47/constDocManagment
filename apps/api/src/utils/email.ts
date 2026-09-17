@@ -27,6 +27,7 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  configurationSet?: string;
 }
 
 export type EmailTransport = "ses" | "log";
@@ -39,7 +40,12 @@ let sesClient: SESClient | null = null;
 
 function getSesClient(): SESClient {
   if (!sesClient) {
-    sesClient = new SESClient({ region: env.awsRegion });
+    sesClient = new SESClient({
+      region: env.awsRegion,
+      credentials: process.env.SES_ACCESS_KEY_ID && process.env.SES_SECRET_ACCESS_KEY
+        ? { accessKeyId: process.env.SES_ACCESS_KEY_ID, secretAccessKey: process.env.SES_SECRET_ACCESS_KEY }
+        : undefined,
+    });
   }
 
   return sesClient;
@@ -49,6 +55,7 @@ async function sendViaSes(message: EmailMessage, from: string): Promise<void> {
   await getSesClient().send(
     new SendEmailCommand({
       Source: from,
+      ...(message.configurationSet ? { ConfigurationSetName: message.configurationSet } : {}),
       Destination: { ToAddresses: [message.to] },
       Message: {
         Subject: { Data: message.subject, Charset: "UTF-8" },
@@ -82,7 +89,7 @@ export async function sendEmail(message: EmailMessage): Promise<{ delivered: boo
   }
 
   try {
-    await sendViaSes(message, env.mailFrom as string);
+    await sendViaSes({ ...message, configurationSet: message.configurationSet ?? env.sesConfigurationSet }, env.mailFrom as string);
     logger.info(`[email] sent "${message.subject}" to ${message.to}`);
     return { delivered: true, transport };
   } catch (error) {

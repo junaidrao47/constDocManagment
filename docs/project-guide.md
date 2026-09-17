@@ -125,7 +125,7 @@ Sequence:
 2. run migrations
 3. connect to Redis
 4. create Express app
-5. listen on port 3000
+5. listen on port 3001
 
 ## Docker startup flow
 

@@ -38,6 +38,24 @@ nothing now and gets more expensive every week it waits.
 
 ---
 
+## Public implementation note
+
+The first public backend slice is available under `/api/public`:
+
+| Method | Path | Status | Purpose |
+|---|---|---|---|
+| GET | `/api/public/services` | DONE | Active service catalogue |
+| GET | `/api/public/packages` | DONE | Active packages with bundled services |
+| GET | `/api/public/worker-ranges` | DONE | Active worker pricing bands |
+| GET | `/api/public/locations` | DONE | Active locations and pricing modifiers |
+| GET | `/api/public/industries` | DONE | Industry selector data |
+| POST | `/api/public/quotations/calculate` | DONE | Calculate a quote from database pricing data |
+| GET | `/api/customers/me/dashboard` | DONE | Customer dashboard summary |
+| GET | `/api/agent/documents` | DONE | Agent/manager document review collection |
+
+Customer upload remains available through the existing authenticated document flow:
+`POST /api/documents/upload-url`, followed by the returned S3 `PUT` or local multipart `POST` URL.
+
 ## 1. Authentication — `/api/auth`
 
 No portal owns these; all four roles use them.

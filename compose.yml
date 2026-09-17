@@ -23,11 +23,12 @@ services:
       context: ./apps/api
       target: development
     ports:
-      - "${PORT:-3000}:3000"
+      # Keep the API separate from the admin Next.js dev server on :3000.
+      - "${API_PORT:-3001}:3001"
     env_file: .env
     environment:
       NODE_ENV: development
-      PORT: 3000
+      PORT: 3001
       # Container-side hostnames. These deliberately override the localhost
       # values in .env, which exist for host-side tooling.
       DATABASE_URL: postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
@@ -39,7 +40,7 @@ services:
       - api_storage:/app/storage
     healthcheck:
       # node:20-alpine ships no curl, so use Node's global fetch instead.
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6

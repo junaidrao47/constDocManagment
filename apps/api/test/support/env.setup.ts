@@ -33,7 +33,7 @@ process.env.JWT_REFRESH_EXPIRES_IN = "7d";
 
 process.env.CORS_ORIGIN = "http://localhost:5173";
 process.env.WEB_URL = "http://localhost:5173";
-process.env.API_URL = "http://127.0.0.1:3000";
+process.env.API_URL = "http://127.0.0.1:3001";
 
 /**
  * Cleared, not set.

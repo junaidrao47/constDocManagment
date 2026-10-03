@@ -15,7 +15,7 @@ describe("public catalogue and calculator", () => {
     fakeDb.locations().seed({ id: locationId, state: "Punjab", city: "Lahore", multiplier: "1.2", cityFee: "500", isActive: true });
     fakeDb.services().seed({ id: serviceId, name: "Compliance review", description: "Review", basePrice: "2500", isActive: true });
     fakeDb.workerRanges().seed({ id: crypto.randomUUID(), minWorkers: 1, maxWorkers: 10, basePrice: "10000", isActive: true });
-    fakeDb.industries().seed({ id: industryId, name: "Construction", description: null });
+    fakeDb.industries().seed({ id: industryId, name: "Construction", description: null, priceWeight: "1.0000", isActive: true });
 
     const services = await request(testApp()).get("/api/public/services");
     expect(services.status).toBe(200);

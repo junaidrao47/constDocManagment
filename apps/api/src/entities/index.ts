@@ -15,3 +15,4 @@ export * from "./document-status-history.entity";
 export * from "./invoice.entity";
 export * from "./notification-log.entity";
 export * from "./quotation-status-history.entity";
+export * from "./app-setting.entity";

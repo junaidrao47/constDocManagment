@@ -1,5 +1,6 @@
 import { AppDataSource } from "../../config/database";
 import { HttpError } from "../../utils/http-error";
+import { AppSettingEntity } from "../../entities/app-setting.entity";
 import { IndustryEntity } from "../../entities/industry.entity";
 import { LocationEntity } from "../../entities/location.entity";
 import { ServiceEntity } from "../../entities/service.entity";
@@ -9,6 +10,12 @@ import { calculateQuotation, PricingInput } from "../quotations/pricing.engine";
 
 function numberValue(value: string | number | null | undefined): number {
   return value == null ? 0 : Number(value);
+}
+
+/** Read a single app_settings row; returns the raw jsonb value or null when absent. */
+export async function getSettingValue(key: string): Promise<unknown> {
+  const row = await AppDataSource.getRepository(AppSettingEntity).findOne({ where: { key } as any });
+  return row?.value ?? null;
 }
 
 export const publicService = {
@@ -77,15 +84,26 @@ export const publicService = {
   },
 
   async listIndustries() {
-    const industries = await AppDataSource.getRepository(IndustryEntity).find({ order: { name: "ASC" } });
-    return industries.map((industry) => ({ id: industry.id, name: industry.name, description: industry.description ?? null }));
+    const industries = await AppDataSource.getRepository(IndustryEntity).find({
+      where: { isActive: true },
+      order: { name: "ASC" },
+    });
+    return industries.map((industry) => ({
+      id: industry.id,
+      name: industry.name,
+      description: industry.description ?? null,
+      priceWeight: numberValue(industry.priceWeight),
+    }));
   },
 
   async calculate(input: PricingInput) {
-    const [workerRanges, location, services] = await Promise.all([
+    const [workerRanges, location, services, industry, currencyRaw, validityRaw] = await Promise.all([
       AppDataSource.getRepository(WorkerRangeEntity).find({ where: { isActive: true } }),
       AppDataSource.getRepository(LocationEntity).findOne({ where: { id: input.locationId, isActive: true } }),
       AppDataSource.getRepository(ServiceEntity).find({ where: { isActive: true } }),
+      AppDataSource.getRepository(IndustryEntity).findOne({ where: { id: input.industryId } }),
+      getSettingValue("currency"),
+      getSettingValue("quote_validity_days"),
     ]);
 
     if (!location) {
@@ -98,10 +116,18 @@ export const publicService = {
       throw new HttpError(404, "Service not found");
     }
 
-    return calculateQuotation(input, {
+    const industryWeight = industry?.priceWeight ?? "1";
+    const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
+    const quoteValidityDays = typeof validityRaw === "number" && validityRaw >= 1 ? Math.round(validityRaw) : 15;
+
+    const result = calculateQuotation(input, {
       workerRanges,
       location,
       services,
+      industryWeight,
+      currency,
     });
+
+    return { ...result, quoteValidityDays };
   },
 };

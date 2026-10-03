@@ -1,6 +1,7 @@
 import path from "path";
 import { DataSource } from "typeorm";
 import {
+  AppSettingEntity,
   DocumentEntity,
   DocumentStatusHistoryEntity,
   IndustryEntity,
@@ -47,6 +48,7 @@ export const AppDataSource = new DataSource({
     WorkerRangeEntity,
     LocationEntity,
     IndustryEntity,
+    AppSettingEntity,
     QuotationEntity,
     QuotationItemEntity,
     QuotationStatusHistoryEntity,

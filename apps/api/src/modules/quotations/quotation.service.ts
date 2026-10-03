@@ -5,7 +5,7 @@ import { NotificationLogEntity } from "../../entities/notification-log.entity";
 import { HttpError } from "../../utils/http-error";
 import { sendEmail } from "../../utils/email";
 import { UserRole } from "../users/user.entity";
-import { publicService } from "../public/public.service";
+import { publicService, getSettingValue } from "../public/public.service";
 import { PricingInput } from "./pricing.engine";
 import { QuotationEntity } from "./quotation.entity";
 import { assertQuotationTransition, isQuotationStatus, QuotationStatus } from "./quotation-status";
@@ -30,7 +30,11 @@ async function expireIfNeeded(quotation: QuotationEntity) {
 }
 
 export const quotationService = {
-  async create(customerId: string, input: PricingInput, validityDays = 30) {
+  async create(customerId: string, input: PricingInput) {
+    // Read validity from settings; fall back to 15 if not configured
+    const validityRaw = await getSettingValue("quote_validity_days");
+    const validityDays = typeof validityRaw === "number" && validityRaw >= 1 ? Math.round(validityRaw) : 15;
+
     const calculated = await publicService.calculate(input);
     const quotation = quotations().create({
       customerId, industryId: input.industryId, locationId: input.locationId, workerCount: input.workerCount,
@@ -81,7 +85,13 @@ export const quotationService = {
     );
 
     if (nextStatus === QuotationStatus.Sent && quotation.customer?.email) {
-      void sendEmail({ to: quotation.customer.email, subject: "Your quotation is ready", text: `Your quotation ${quotation.id} is ready for review. Total: PKR ${quotation.totalPrice}.` });
+      const currencyRaw = await getSettingValue("currency");
+      const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
+      void sendEmail({
+        to: quotation.customer.email,
+        subject: "Your quotation is ready",
+        text: `Your quotation ${quotation.id} is ready for review. Total: ${currency} ${quotation.totalPrice}.`,
+      });
     }
     return this.get(id, actor);
   },

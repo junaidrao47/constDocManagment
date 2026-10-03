@@ -30,17 +30,25 @@ export interface PricingService {
 export interface PricingOutput {
   workerBasePrice: number;
   locationMultiplier: number;
+  /** Industry price-weight multiplier applied to the worker-base portion. Default 1. */
+  industryWeight: number;
   cityFee: number;
   serviceCharges: { serviceId: string; name: string; price: number }[];
   subtotal: number;
   total: number;
   recommendedPackage: string | null;
+  /** ISO-4217 currency code read from app_settings. */
+  currency: string;
 }
 
 export interface PricingDbData {
   workerRanges: PricingWorkerRange[];
   location: PricingLocation | null | undefined;
   services: PricingService[];
+  /** Decimal string or number; defaults to 1 when absent. */
+  industryWeight?: string | number | null;
+  /** ISO-4217 currency code; defaults to "MXN" when absent. */
+  currency?: string | null;
 }
 
 function toNumber(value: string | number | null | undefined): number {
@@ -67,11 +75,21 @@ function pickWorkerRange(workerCount: number, workerRanges: PricingWorkerRange[]
     .sort((left, right) => right.minWorkers - left.minWorkers)[0] ?? null;
 }
 
+/**
+ * Pure pricing calculation.
+ *
+ * Formula: workerBasePrice × locationMultiplier × industryWeight + serviceCharges + cityFee
+ *
+ * industryWeight defaults to 1 when absent, so existing prices are unchanged.
+ * Only the worker-base portion is scaled; service charges are not affected.
+ */
 export function calculateQuotation(input: PricingInput, dbData: PricingDbData): PricingOutput {
   const workerRange = pickWorkerRange(input.workerCount, dbData.workerRanges);
   const workerBasePrice = toNumber(workerRange?.basePrice);
   const locationMultiplier = toNumber(dbData.location?.multiplier) || 1;
   const cityFee = toNumber(dbData.location?.cityFee);
+  const industryWeight = dbData.industryWeight != null ? toNumber(dbData.industryWeight) || 1 : 1;
+  const currency = dbData.currency ?? "MXN";
 
   const serviceById = new Map(
     dbData.services
@@ -95,16 +113,19 @@ export function calculateQuotation(input: PricingInput, dbData: PricingDbData): 
     .filter((charge): charge is { serviceId: string; name: string; price: number } => charge !== null);
 
   const serviceTotal = serviceCharges.reduce((sum, charge) => sum + charge.price, 0);
-  const subtotal = workerBasePrice * locationMultiplier + serviceTotal;
+  // Industry weight scales only the worker-base portion, not service charges
+  const subtotal = workerBasePrice * locationMultiplier * industryWeight + serviceTotal;
   const total = subtotal + cityFee;
 
   return {
     workerBasePrice,
     locationMultiplier,
+    industryWeight,
     cityFee,
     serviceCharges,
     subtotal,
     total,
     recommendedPackage: null,
+    currency,
   };
 }

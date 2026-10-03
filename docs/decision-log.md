@@ -318,16 +318,20 @@ The gate requires a test, but the client has not been able to verify the AWS or 
 ### Result
 `npm test` in `apps/api` runs the gate on a laptop with no database, no cache, and no credentials. The fake repository throws on any TypeORM find operator it does not implement rather than returning an empty result, because a fake that silently answers "no rows" turns a real defect into a passing test. Integration tests against live Postgres are a separate suite, added alongside the worker in Phase 2.
 
-## 2026-09-04
+## 2026-10-03
 
 ### Decision
-Silence morgan's access log and `logger.info`/`logger.debug` when `NODE_ENV=test`, keeping `warn` and `error`. Route the decision through `utils/logger` and one conditional in `app.ts` rather than per call site.
+Store all pricing configuration and application settings in the database, making them fully admin-editable with soft deletes, validation rules, and an audit trail.
 
 ### Why
-The suite makes roughly thirty requests per file, each producing a combined-format access line plus the informational lines the API writes on login and on every document status change. A failed assertion was arriving buried in that, which is the state in which people stop reading output and start guessing. Warnings and errors are deliberately kept: those are the lines that *explain* a failure. `utils/logger` reads `process.env.NODE_ENV` directly instead of importing `config/env`, because `config/env` may itself log and the import would be circular.
+- **Industry Weight Formula**: Multiplies the worker base price together with the location multiplier (`workerBasePrice × locationMultiplier × industryWeight`). Default weight is 1.0000, so existing prices do not change. Only the worker-base portion is scaled; fixed service add-ons and city fees are not scaled by industry weight.
+- **Soft Delete**: Deleting any pricing entity (service, industry, worker range, location) sets `isActive = false` instead of executing a hard DELETE. Existing quotations and audit histories reference these rows by foreign key, so deleting them from the database would orphan records or violate referential integrity constraints.
+- **Settings Whitelist & Validation**: The `app_settings` table uses a string primary key (`key`), a `jsonb` value column, and an `updated_by` audit column. To prevent unvalidated state corruption, write operations are strictly restricted to a whitelist (`currency`, `quote_validity_days`). Currency requires a 3-letter uppercase ISO-4217 code; quote validity requires an integer between 1 and 365 days.
+- **Worker Range Integrity**: Overlapping active ranges are rejected at validation time. `minWorkers` must not exceed `maxWorkers`. Only the highest active range may have an open-ended (null) `maxWorkers`.
 
 ### Result
-One conditional in `app.ts` and one flag in `utils/logger`. Non-test behaviour is byte-for-byte unchanged, and swapping in a structured logger with request correlation in Phase 6 still touches only `utils/logger`, since nothing in the codebase calls `console` directly.
+Pricing calculation is entirely DB-driven and configurable via `/api/admin/services`, `/api/admin/industries`, `/api/admin/worker-ranges`, `/api/admin/locations`, and `/api/admin/settings`.
+
 
 
 

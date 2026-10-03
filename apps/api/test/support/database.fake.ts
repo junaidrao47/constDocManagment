@@ -9,6 +9,7 @@ import { LocationEntity } from "../../src/entities/location.entity";
 import { IndustryEntity } from "../../src/entities/industry.entity";
 import { PackageEntity } from "../../src/modules/packages/package.entity";
 import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
+import { AppSettingEntity } from "../../src/entities/app-setting.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -92,6 +93,7 @@ export const fakeDb = {
   packages: () => AppDataSource.getRepository(PackageEntity),
   notifications: () => AppDataSource.getRepository(NotificationLogEntity),
   quotations: () => AppDataSource.getRepository(QuotationEntity),
+  appSettings: () => AppDataSource.getRepository(AppSettingEntity),
 };
 
 export function resetFakeDatabase(): void {

@@ -230,24 +230,24 @@ Service catalogue (scope §7):
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
-| GET, POST | `/services` | NEW | List and create |
-| GET, PATCH, DELETE | `/services/:id` | NEW | Detail, update, deactivate |
-| GET, POST | `/packages` | NEW | List and create |
-| GET, PATCH, DELETE | `/packages/:id` | NEW | Detail, update, deactivate |
+| GET, POST | `/services` | DONE | List and create |
+| GET, PATCH, DELETE | `/services/:id` | DONE | Detail, update, deactivate |
+| GET, POST | `/packages` | DONE | List and create |
+| GET, PATCH, DELETE | `/packages/:id` | DONE | Detail, update, deactivate |
 | PUT | `/packages/:id/services` | NEW | Replace the bundled service set (`package_services`) |
-| GET, POST | `/industries` | NEW | List and create |
-| GET, PATCH, DELETE | `/industries/:id` | NEW | Includes the pricing weight added in Phase 3 |
+| GET, POST | `/industries` | DONE | List and create |
+| GET, PATCH, DELETE | `/industries/:id` | DONE | Includes the pricing weight added in Phase 3 |
 
 Pricing configuration (scope §4 — "no pricing logic will be hardcoded"):
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
-| GET, POST | `/pricing/worker-ranges` | STUB | POST exists as a placeholder; GET does not exist |
-| PATCH, DELETE | `/pricing/worker-ranges/:id` | NEW | Edit or retire a band |
-| GET, POST | `/pricing/locations` | STUB | State, city, multiplier, city fee |
-| PATCH, DELETE | `/pricing/locations/:id` | NEW | Edit or retire |
-| POST | `/pricing/locations/import` | NEW | CSV import — states and cities entered by hand will not scale |
-| GET, PATCH | `/settings` | NEW | Quotation validity days, reminder lead times, currency, tax rate. No settings table exists |
+| GET, POST | `/worker-ranges` | DONE | List and create active worker bands |
+| PATCH, DELETE | `/worker-ranges/:id` | DONE | Edit or deactivate a band |
+| GET, POST | `/locations` | DONE | State, city, multiplier, city fee |
+| PATCH, DELETE | `/locations/:id` | DONE | Edit or deactivate |
+| POST | `/locations/import` | NEW | CSV import — states and cities entered by hand will not scale |
+| GET, PUT | `/settings` | DONE | Whitelisted app settings: currency, quote_validity_days |
 | POST | `/pricing/preview` | NEW | Dry-run the engine against draft rules before publishing them |
 
 Quotations, documents and categories:

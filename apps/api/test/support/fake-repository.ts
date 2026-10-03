@@ -155,7 +155,7 @@ export class FakeRepository<T extends Row> {
 
     const row = { ...input } as Row;
 
-    if (typeof row.id !== "string" || row.id.length === 0) {
+    if (row.id === undefined && row.key === undefined) {
       row.id = crypto.randomUUID();
     }
 
@@ -163,7 +163,11 @@ export class FakeRepository<T extends Row> {
     row.createdAt = (row.createdAt as Date | undefined) ?? now;
     row.updatedAt = now;
 
-    const index = this.rows.findIndex((existing) => existing.id === row.id);
+    const index = this.rows.findIndex((existing) => {
+      if (row.id !== undefined && existing.id === row.id) return true;
+      if (row.key !== undefined && existing.key === row.key) return true;
+      return false;
+    });
 
     if (index === -1) {
       this.rows.push(row as T);
@@ -171,7 +175,13 @@ export class FakeRepository<T extends Row> {
       this.rows[index] = { ...this.rows[index], ...row } as T;
     }
 
-    return { ...(this.rows.find((existing) => existing.id === row.id) as T) };
+    return {
+      ...(this.rows.find((existing) => {
+        if (row.id !== undefined && existing.id === row.id) return true;
+        if (row.key !== undefined && existing.key === row.key) return true;
+        return false;
+      }) as T),
+    };
   }
 
   async findOne(options: FakeFindOptions<T>): Promise<T | null> {

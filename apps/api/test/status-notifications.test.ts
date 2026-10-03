@@ -47,7 +47,7 @@ describe("status change notifications", () => {
     });
 
     const response = await request(testApp())
-      .patch(`/api/quotations/${quotationId}/status`)
+      .patch(`/api/agent/quotations/${quotationId}/status`)
       .set("Authorization", bearer(mintToken(manager)))
       .send({ status: QuotationStatus.Sent, note: "Sent to customer" });
 

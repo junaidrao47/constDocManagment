@@ -34,3 +34,6 @@ docker-data/
 postgres_data/
 redis_data/
 ssl_certs/
+
+# uploaded documents (local storage fallback) - never commit client files
+apps/api/storage/

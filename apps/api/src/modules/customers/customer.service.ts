@@ -32,6 +32,9 @@ async function resolveDocumentDownloadUrl(document: DocumentEntity): Promise<str
 
 async function serializeDocument(document: DocumentEntity) {
   const downloadUrl = await resolveDocumentDownloadUrl(document);
+  const approvedDownloadUrl = document.approvedS3Key
+    ? await resolveDocumentDownloadUrl({ ...document, s3Key: document.approvedS3Key } as DocumentEntity)
+    : null;
 
   return {
     id: document.id,
@@ -39,12 +42,17 @@ async function serializeDocument(document: DocumentEntity) {
     serviceId: document.serviceId ?? null,
     fileName: document.fileName,
     s3Key: document.s3Key,
+    approvedFileName: document.approvedFileName ?? null,
+    approvedS3Key: document.approvedS3Key ?? null,
+    approvedUploadedBy: document.approvedUploadedBy ?? null,
+    approvedUploadedAt: document.approvedUploadedAt ?? null,
     status: document.status,
     expiresAt: document.expiresAt ?? null,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     downloadUrl,
     previewUrl: downloadUrl,
+    approvedDownloadUrl,
   };
 }
 

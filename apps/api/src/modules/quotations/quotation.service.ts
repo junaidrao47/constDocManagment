@@ -1,6 +1,7 @@
 import { AppDataSource } from "../../config/database";
 import { QuotationStatusHistoryEntity } from "../../entities/quotation-status-history.entity";
 import { QuotationItemEntity } from "../../entities/quotation-item.entity";
+import { NotificationLogEntity } from "../../entities/notification-log.entity";
 import { HttpError } from "../../utils/http-error";
 import { sendEmail } from "../../utils/email";
 import { UserRole } from "../users/user.entity";
@@ -67,6 +68,18 @@ export const quotationService = {
     if (nextStatus === QuotationStatus.Rejected) quotation.rejectionReason = note ?? null;
     await quotations().save(quotation);
     await history().save(history().create({ quotationId: id, fromStatus: previous, toStatus: nextStatus, changedBy: actor.id, note: note ?? null }));
+
+    const notificationRepository = AppDataSource.getRepository(NotificationLogEntity);
+    await notificationRepository.save(
+      notificationRepository.create({
+        userId: quotation.customerId,
+        type: "quotation_status_change",
+        channel: "email",
+        status: "queued",
+        sentAt: null,
+      }),
+    );
+
     if (nextStatus === QuotationStatus.Sent && quotation.customer?.email) {
       void sendEmail({ to: quotation.customer.email, subject: "Your quotation is ready", text: `Your quotation ${quotation.id} is ready for review. Total: PKR ${quotation.totalPrice}.` });
     }

@@ -96,6 +96,21 @@ describe("document access for the people who review documents", () => {
     expect(overwrite.status).toBe(403);
   });
 
+  it("lets a staff reviewer upload an approved version without replacing the customer submission", async () => {
+    const customer = await seedUser({ role: UserRole.Customer });
+    const agent = await seedUser({ role: UserRole.Agent });
+    const document = seedDocument(customer.id);
+
+    const approved = await request(testApp())
+      .post(`/api/documents/${document.id}/approved-upload`)
+      .set("Authorization", bearer(mintToken(agent)))
+      .attach("file", Buffer.from("approved certificate bytes"), "approved.pdf");
+
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.approvedFileName).toBe("approved.pdf");
+    expect(approved.body.data.fileName).toBe(document.fileName);
+  });
+
   it("rejects a malformed document id as a bad request rather than a server error", async () => {
     const agent = await seedUser({ role: UserRole.Agent });
 

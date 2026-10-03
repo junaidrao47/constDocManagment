@@ -8,6 +8,8 @@ import { AdminEmailSchema } from "./admin-email.schema";
 import { sendEmail } from "../../utils/email";
 import { quotationService } from "../quotations/quotation.service";
 import { QuotationIdParamSchema, QuotationStatusSchema } from "../quotations/quotation.schema";
+import { PackageIdParamSchema, PackageSchema } from "../packages/package.schema";
+import { packageService } from "../packages/package.service";
 
 /**
  * Admin surface. Mounted behind `authenticate` + `authorize(UserRole.Admin)` in
@@ -54,6 +56,12 @@ adminRouter.get("/quotations", send((req) => quotationService.list({ id: actorId
 adminRouter.get("/quotations/:id", validateParams(QuotationIdParamSchema), send((req) => quotationService.get(req.params.id, { id: actorId(req), role: req.user!.role })));
 adminRouter.patch("/quotations/:id/status", validateParams(QuotationIdParamSchema), validate(QuotationStatusSchema), send((req) => quotationService.transition(req.params.id, req.body.status, { id: actorId(req), role: req.user!.role }, req.body.note)));
 adminRouter.get("/quotations/:id/history", validateParams(QuotationIdParamSchema), send((req) => quotationService.history(req.params.id, { id: actorId(req), role: req.user!.role })));
+
+adminRouter.get("/packages", send(() => packageService.list()));
+adminRouter.get("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.get(req.params.id)));
+adminRouter.post("/packages", validate(PackageSchema), send((req) => packageService.create(req.body), 201));
+adminRouter.patch("/packages/:id", validateParams(PackageIdParamSchema), validate(PackageSchema), send((req) => packageService.update(req.params.id, req.body)));
+adminRouter.delete("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.remove(req.params.id)));
 
 adminRouter.get(
   "/users/:id",

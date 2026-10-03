@@ -7,6 +7,7 @@ import { env } from "../config/env";
 
 const STORAGE_ROOT = path.resolve(process.cwd(), "storage");
 const DOCUMENT_ROOT = path.join(STORAGE_ROOT, "documents");
+const CATALOG_ROOT = path.join(STORAGE_ROOT, "catalog");
 
 function getApiBaseUrl(): string {
   return (env.apiUrl ?? `http://localhost:${env.port}`).replace(/\/$/, "");
@@ -35,6 +36,47 @@ export function getLocalDocumentPath(key: string): string {
 
 export async function ensureLocalDocumentStorage(): Promise<void> {
   await fs.mkdir(DOCUMENT_ROOT, { recursive: true });
+}
+
+function catalogExtension(fileName: string): string {
+  return path.extname(fileName).toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin";
+}
+
+export function getLocalCatalogPath(key: string): string {
+  return path.join(CATALOG_ROOT, key);
+}
+
+export async function saveCatalogObject(
+  itemId: string,
+  entityType: string,
+  originalName: string,
+  buffer: Buffer,
+  contentType: string,
+  area: "main" | "gallery",
+): Promise<{ key: string; url: string }> {
+  const key = `${entityType}s/${itemId}/${area}/${crypto.randomUUID()}${catalogExtension(originalName)}`;
+
+  if (isS3Configured() && env.s3Bucket) {
+    const client = createS3Client();
+    await client.send(new PutObjectCommand({ Bucket: env.s3Bucket, Key: key, Body: buffer, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }));
+    return { key, url: `https://${env.s3Bucket}.s3.${env.awsRegion}.amazonaws.com/${key}` };
+  }
+
+  const filePath = getLocalCatalogPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buffer);
+  return { key, url: `/api/public/catalog/images/${encodeURIComponent(key)}` };
+}
+
+export async function removeCatalogObject(key: string): Promise<void> {
+  if (isS3Configured() && env.s3Bucket) {
+    return;
+  }
+  try {
+    await fs.unlink(getLocalCatalogPath(key));
+  } catch {
+    // Ignore cleanup errors for missing local files.
+  }
 }
 
 export async function saveLocalDocument(buffer: Buffer, key: string): Promise<string> {

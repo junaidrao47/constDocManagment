@@ -1,5 +1,6 @@
 import { DocumentStatusHistoryEntity } from "../../src/entities/document-status-history.entity";
 import { RefreshTokenEntity } from "../../src/entities/refresh-token.entity";
+import { NotificationLogEntity } from "../../src/entities/notification-log.entity";
 import { DocumentEntity } from "../../src/modules/documents/document.entity";
 import { UserEntity } from "../../src/modules/users/user.entity";
 import { ServiceEntity } from "../../src/entities/service.entity";
@@ -7,6 +8,7 @@ import { WorkerRangeEntity } from "../../src/entities/worker-range.entity";
 import { LocationEntity } from "../../src/entities/location.entity";
 import { IndustryEntity } from "../../src/entities/industry.entity";
 import { PackageEntity } from "../../src/modules/packages/package.entity";
+import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -88,6 +90,8 @@ export const fakeDb = {
   locations: () => AppDataSource.getRepository(LocationEntity),
   industries: () => AppDataSource.getRepository(IndustryEntity),
   packages: () => AppDataSource.getRepository(PackageEntity),
+  notifications: () => AppDataSource.getRepository(NotificationLogEntity),
+  quotations: () => AppDataSource.getRepository(QuotationEntity),
 };
 
 export function resetFakeDatabase(): void {

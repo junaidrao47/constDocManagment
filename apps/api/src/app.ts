@@ -10,8 +10,6 @@ import { customerRouter } from "./modules/customers/customer.router";
 import { documentRouter } from "./modules/documents/document.router";
 import { adminRouter } from "./modules/admin/admin.router";
 import { quotationRouter } from "./modules/quotations/quotation.router";
-import { pricingRouter } from "./modules/pricing/pricing.router";
-import { packageRouter } from "./modules/packages/package.router";
 import { userRouter } from "./modules/users/user.router";
 import { publicRouter } from "./modules/public/public.router";
 import { agentRouter } from "./modules/agent/agent.router";
@@ -23,6 +21,7 @@ import { AppDataSource } from "./config/database";
 import { redisClient } from "./config/redis";
 import { env } from "./config/env";
 import { Request, Response } from "express";
+import { adminCatalogRouter, publicCatalogRouter } from "./modules/catalog/catalog.router";
 
 const READINESS_TIMEOUT_MS = 2_000;
 
@@ -122,13 +121,13 @@ export function createApp() {
   app.use("/api/documents", authenticate, documentRouter);
   app.use("/api/agent", authenticate, agentRouter);
   app.use("/api/public", publicRouter);
+  app.use("/api/public/catalog", publicCatalogRouter);
   app.use("/api/quotations", authenticate, quotationRouter);
-  app.use("/api/pricing", pricingRouter);
-  app.use("/api/packages", packageRouter);
   // Admin only. `manager` used to be listed here and so inherited the entire admin
   // surface — user management, pricing configuration, analytics. Manager-specific
   // oversight lives under /api/manager, which Phase 4 adds along with assignments.
   app.use("/api/admin", authenticate, authorize(UserRole.Admin), adminRouter);
+  app.use("/api/admin/catalog", authenticate, authorize(UserRole.Admin), adminCatalogRouter);
 
   // Liveness: answers as long as the process can serve HTTP. Used by the Docker
   // healthcheck, so it deliberately does not touch Postgres or Redis — a brief

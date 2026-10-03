@@ -145,6 +145,25 @@ documentRouter.post(
   }),
 );
 
+documentRouter.post(
+  "/:id/approved-upload",
+  authorize(UserRole.Agent, UserRole.Manager, UserRole.Admin),
+  validateParams(DocumentIdParamSchema),
+  handleUpload("file"),
+  sendAsync(async (req) => {
+    if (!req.file) {
+      throw new HttpError(400, "file is required");
+    }
+
+    return documentService.uploadApprovedDocument(actor(req), req.params.id, {
+      buffer: req.file.buffer,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  }),
+);
+
 documentRouter.get(
   "/:id",
   authorize(...READ_ROLES),
@@ -160,12 +179,35 @@ documentRouter.get(
 );
 
 documentRouter.get(
+  "/:id/approved-download-url",
+  authorize(...READ_ROLES),
+  validateParams(DocumentIdParamSchema),
+  sendAsync((req) => documentService.getApprovedDocumentDownloadTarget(actor(req), req.params.id)),
+);
+
+documentRouter.get(
   "/:id/download",
   authorize(...READ_ROLES),
   validateParams(DocumentIdParamSchema),
   async (req, res, next) => {
     try {
       const document = await documentService.getDocumentLocalPath(actor(req), req.params.id);
+      if (req.query.version === "approved") {
+        if (!document.approvedS3Key) {
+          throw new HttpError(404, "Approved document version not found");
+        }
+
+        const signedUrl = await getDownloadUrl({ key: document.approvedS3Key });
+
+        if (signedUrl) {
+          res.redirect(signedUrl);
+          return;
+        }
+
+        res.download(getLocalDocumentPath(document.approvedS3Key), document.approvedFileName ?? document.fileName);
+        return;
+      }
+
       const signedUrl = await getDownloadUrl({ key: document.s3Key });
 
       if (signedUrl) {

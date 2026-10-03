@@ -28,6 +28,18 @@ export class DocumentEntity extends AppBaseEntity {
 	@Column({ name: "s3_key", type: "varchar", length: 512 })
 	s3Key!: string;
 
+	@Column({ name: "approved_file_name", type: "varchar", length: 255, nullable: true })
+	approvedFileName?: string | null;
+
+	@Column({ name: "approved_s3_key", type: "varchar", length: 512, nullable: true })
+	approvedS3Key?: string | null;
+
+	@Column({ name: "approved_uploaded_by", type: "uuid", nullable: true })
+	approvedUploadedBy?: string | null;
+
+	@Column({ name: "approved_uploaded_at", type: "timestamptz", nullable: true })
+	approvedUploadedAt?: Date | null;
+
 	@Column({
 		type: "enum",
 		enum: DocumentStatus, enumName: "document_status_enum",

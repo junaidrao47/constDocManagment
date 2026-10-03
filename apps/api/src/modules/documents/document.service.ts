@@ -10,6 +10,7 @@ import {
   removeLocalDocument,
 } from "../../utils/s3";
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
+import { NotificationLogEntity } from "../../entities/notification-log.entity";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import { ServiceEntity } from "../../entities/service.entity";
@@ -66,8 +67,18 @@ async function resolveDownloadUrl(document: DocumentEntity): Promise<string> {
   return signedUrl ?? buildLocalDownloadUrl(document.id);
 }
 
+async function resolveApprovedDownloadUrl(document: DocumentEntity): Promise<string | null> {
+  if (!document.approvedS3Key) {
+    return null;
+  }
+
+  const signedUrl = await getDownloadUrl({ key: document.approvedS3Key });
+  return signedUrl ?? `${buildLocalDownloadUrl(document.id)}?version=approved`;
+}
+
 async function normalizeDocument(document: DocumentEntity) {
   const downloadUrl = await resolveDownloadUrl(document);
+  const approvedDownloadUrl = await resolveApprovedDownloadUrl(document);
 
   return {
     id: document.id,
@@ -75,12 +86,18 @@ async function normalizeDocument(document: DocumentEntity) {
     serviceId: document.serviceId ?? null,
     fileName: document.fileName,
     s3Key: document.s3Key,
+    approvedFileName: document.approvedFileName ?? null,
+    approvedS3Key: document.approvedS3Key ?? null,
+    approvedUploadedBy: document.approvedUploadedBy ?? null,
+    approvedUploadedAt: document.approvedUploadedAt ?? null,
     status: document.status,
     expiresAt: document.expiresAt ?? null,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     downloadUrl,
     previewUrl: downloadUrl,
+    approvedDownloadUrl,
+    approvedPreviewUrl: approvedDownloadUrl,
   };
 }
 
@@ -136,6 +153,20 @@ function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): 
  */
 function assertCanWriteDocumentFile(document: DocumentEntity, actor: DocumentActor): void {
   if (actor.role !== UserRole.Customer || document.customerId !== actor.id) {
+    throw new HttpError(403, "Forbidden");
+  }
+}
+
+function assertCanUploadApprovedVersion(document: DocumentEntity, actor: DocumentActor): void {
+  if (actor.role === UserRole.Customer && document.customerId !== actor.id) {
+    throw new HttpError(403, "Forbidden");
+  }
+
+  if (
+    actor.role !== UserRole.Agent &&
+    actor.role !== UserRole.Manager &&
+    actor.role !== UserRole.Admin
+  ) {
     throw new HttpError(403, "Forbidden");
   }
 }
@@ -214,6 +245,30 @@ export const documentService = {
     return normalizeDocument(saved);
   },
 
+  async uploadApprovedDocument(actor: DocumentActor, documentId: string, file: LocalDocumentUpload) {
+    assertDatabaseReady();
+
+    const document = await requireDocument(documentId);
+    assertCanUploadApprovedVersion(document, actor);
+
+    const safeName = sanitizeFileName(file.originalName || "approved-document.pdf");
+    if (!safeName || safeName === "." || safeName === "..") {
+      throw new HttpError(400, "File name must contain at least one supported character");
+    }
+
+    const storageKey = `documents/approved/${document.id}/${crypto.randomUUID()}${safeName.includes(".") ? "" : ".pdf"}`;
+    await saveLocalDocument(file.buffer, storageKey);
+
+    document.approvedFileName = safeName;
+    document.approvedS3Key = storageKey;
+    document.approvedUploadedBy = actor.id;
+    document.approvedUploadedAt = new Date();
+    document.status = DocumentStatus.Approved;
+
+    const saved = await AppDataSource.getRepository(DocumentEntity).save(document);
+    return normalizeDocument(saved);
+  },
+
   async getDocumentDownloadTarget(actor: DocumentActor, documentId: string) {
     assertDatabaseReady();
 
@@ -225,6 +280,25 @@ export const documentService = {
     return {
       document: await normalizeDocument(document),
       downloadUrl: signedUrl ?? buildLocalDownloadUrl(document.id),
+      downloadMode: signedUrl ? "s3" : "local",
+    };
+  },
+
+  async getApprovedDocumentDownloadTarget(actor: DocumentActor, documentId: string) {
+    assertDatabaseReady();
+
+    const document = await requireDocument(documentId);
+    assertCanReadDocument(document, actor);
+
+    if (!document.approvedS3Key) {
+      throw new HttpError(404, "Approved document version not found");
+    }
+
+    const signedUrl = await getDownloadUrl({ key: document.approvedS3Key });
+
+    return {
+      document: await normalizeDocument(document),
+      downloadUrl: signedUrl ?? `${buildLocalDownloadUrl(document.id)}?version=approved`,
       downloadMode: signedUrl ? "s3" : "local",
     };
   },
@@ -280,6 +354,17 @@ export const documentService = {
 
     document.status = input.toStatus;
     const savedDocument = await documentRepository.save(document);
+
+    const notificationRepository = AppDataSource.getRepository(NotificationLogEntity);
+    await notificationRepository.save(
+      notificationRepository.create({
+        userId: document.customerId,
+        type: "document_status_change",
+        channel: "email",
+        status: "queued",
+        sentAt: null,
+      }),
+    );
 
     return normalizeDocument(savedDocument);
   },

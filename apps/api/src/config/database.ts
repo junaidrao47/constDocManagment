@@ -18,6 +18,13 @@ import {
   UserEntity,
   WorkerRangeEntity,
 } from "../entities";
+import {
+  CatalogCategoryEntity,
+  CatalogFieldEntity,
+  CatalogFieldValueEntity,
+  CatalogImageEntity,
+  CatalogItemEntity,
+} from "../modules/catalog/catalog.entity";
 import { env } from "./env";
 
 export const databaseConfig = {
@@ -49,6 +56,11 @@ export const AppDataSource = new DataSource({
     InvoiceEntity,
     PaymentEntity,
     NotificationLogEntity,
+    CatalogCategoryEntity,
+    CatalogItemEntity,
+    CatalogFieldEntity,
+    CatalogFieldValueEntity,
+    CatalogImageEntity,
   ],
   migrations: [migrationsGlob],
   synchronize: false,

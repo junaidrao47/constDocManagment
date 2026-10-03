@@ -1,153 +1,96 @@
 @baseUrl = http://localhost:3001/api
-@token = your_auth_token_here
+@customerToken = replace_with_customer_access_token
+@staffToken = replace_with_staff_access_token
+@adminToken = replace_with_admin_access_token
+@quotationId = replace_with_quotation_uuid
+@locationId = replace_with_location_uuid
+@industryId = replace_with_industry_uuid
+@serviceId = replace_with_service_uuid
 
-### ====================================================================
-### QUOTATIONS MODULE TESTS
-### ====================================================================
-
-### Test: Get All Quotations
-GET {{baseUrl}}/quotations
-Authorization: Bearer {{token}}
-
-### Test: Get Quotation by ID
-GET {{baseUrl}}/quotations/quote-id-here
-Authorization: Bearer {{token}}
-
-### Test: Create New Quotation
-POST {{baseUrl}}/quotations
+### Public pricing calculation
+POST {{baseUrl}}/public/quotations/calculate
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "customerId": "customer-id-here",
-  "title": "Project Quotation",
-  "description": "Quotation for construction project",
-  "validUntil": "2024-12-31",
-  "items": [
-    {
-      "serviceId": "service-id-1",
-      "description": "Labor Cost",
-      "quantity": 10,
-      "unit": "days",
-      "unitPrice": 5000,
-      "taxRate": 17
-    },
-    {
-      "serviceId": "service-id-2",
-      "description": "Material Cost",
-      "quantity": 5,
-      "unit": "tons",
-      "unitPrice": 15000,
-      "taxRate": 17
-    }
-  ],
-  "discount": 5000,
-  "notes": "Payment terms: 50% upfront, 50% on completion"
+  "workerCount": 10,
+  "locationId": "{{locationId}}",
+  "industryId": "{{industryId}}",
+  "serviceIds": ["{{serviceId}}"]
 }
 
-### Test: Update Quotation
-PUT {{baseUrl}}/quotations/quote-id-here
+### Customer: save quotation
+POST {{baseUrl}}/customers/me/quotations
+Authorization: Bearer {{customerToken}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "title": "Updated Quotation Title",
-  "validUntil": "2025-01-31",
-  "discount": 7000,
-  "notes": "Updated payment terms"
+  "workerCount": 10,
+  "locationId": "{{locationId}}",
+  "industryId": "{{industryId}}",
+  "serviceIds": ["{{serviceId}}"]
 }
 
-### Test: Delete Quotation
-DELETE {{baseUrl}}/quotations/quote-id-here
-Authorization: Bearer {{token}}
+### Customer: quotation history
+GET {{baseUrl}}/customers/me/quotations
+Authorization: Bearer {{customerToken}}
 
-### Test: Get Quotation Items
-GET {{baseUrl}}/quotations/quote-id-here/items
-Authorization: Bearer {{token}}
+### Customer: quotation detail
+GET {{baseUrl}}/customers/me/quotations/{{quotationId}}
+Authorization: Bearer {{customerToken}}
 
-### Test: Add Item to Quotation
-POST {{baseUrl}}/quotations/quote-id-here/items
+### Customer: accept quotation
+POST {{baseUrl}}/customers/me/quotations/{{quotationId}}/accept
+Authorization: Bearer {{customerToken}}
+
+### Customer: reject quotation
+POST {{baseUrl}}/customers/me/quotations/{{quotationId}}/reject
+Authorization: Bearer {{customerToken}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "serviceId": "service-id-3",
-  "description": "Additional Service",
-  "quantity": 3,
-  "unit": "units",
-  "unitPrice": 2000,
-  "taxRate": 17
+  "reason": "Customer requested a revised scope"
 }
 
-### Test: Update Quotation Item
-PUT {{baseUrl}}/quotations/quote-id-here/items/item-id-here
+### Staff: quotation queue
+GET {{baseUrl}}/agent/quotations
+Authorization: Bearer {{staffToken}}
+
+### Staff: quotation detail
+GET {{baseUrl}}/agent/quotations/{{quotationId}}
+Authorization: Bearer {{staffToken}}
+
+### Staff: move quotation to review
+PATCH {{baseUrl}}/agent/quotations/{{quotationId}}/status
+Authorization: Bearer {{staffToken}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "quantity": 15,
-  "unitPrice": 5500
+  "status": "under_review",
+  "note": "Initial staff review"
 }
 
-### Test: Delete Quotation Item
-DELETE {{baseUrl}}/quotations/quote-id-here/items/item-id-here
-Authorization: Bearer {{token}}
+### Admin: quotation queue
+GET {{baseUrl}}/admin/quotations
+Authorization: Bearer {{adminToken}}
 
-### Test: Send Quotation
-POST {{baseUrl}}/quotations/quote-id-here/send
+### Admin: send quotation
+PATCH {{baseUrl}}/admin/quotations/{{quotationId}}/status
+Authorization: Bearer {{adminToken}}
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "recipientEmail": "customer@example.com",
-  "message": "Please review the attached quotation"
+  "status": "sent",
+  "note": "Ready for customer review"
 }
 
-### Test: Download Quotation (PDF)
-GET {{baseUrl}}/quotations/quote-id-here/download
-Authorization: Bearer {{token}}
+### Admin: quotation history
+GET {{baseUrl}}/admin/quotations/{{quotationId}}/history
+Authorization: Bearer {{adminToken}}
 
-### Test: Accept Quotation
-POST {{baseUrl}}/quotations/quote-id-here/accept
-Authorization: Bearer {{token}}
+### Authenticated quotation detail
+GET {{baseUrl}}/quotations/{{quotationId}}
+Authorization: Bearer {{customerToken}}
 
-### Test: Reject Quotation
-POST {{baseUrl}}/quotations/quote-id-here/reject
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "reason": "Price is too high"
-}
-
-### Test: Convert Quotation to Invoice
-POST {{baseUrl}}/quotations/quote-id-here/convert-to-invoice
-Authorization: Bearer {{token}}
-
-### Test: Duplicate Quotation
-POST {{baseUrl}}/quotations/quote-id-here/duplicate
-Authorization: Bearer {{token}}
-
-### Test: Calculate Quotation Total
-POST {{baseUrl}}/quotations/calculate
-Content-Type: application/json
-Authorization: Bearer {{token}}
-
-{
-  "items": [
-    {
-      "quantity": 10,
-      "unitPrice": 5000,
-      "taxRate": 17
-    }
-  ],
-  "discount": 5000
-}
-
-### Test: Search Quotations
-GET {{baseUrl}}/quotations/search?q=project&status=pending&limit=20&offset=0
-Authorization: Bearer {{token}}
-
-### Test: Get Quotation Status History
-GET {{baseUrl}}/quotations/quote-id-here/status-history
-Authorization: Bearer {{token}}
+### Authenticated quotation PDF
+GET {{baseUrl}}/quotations/{{quotationId}}/pdf
+Authorization: Bearer {{customerToken}}

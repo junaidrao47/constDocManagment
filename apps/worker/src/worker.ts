@@ -3,6 +3,8 @@ import { closeDatabase, initializeDatabase } from "./config/database";
 import { closeRedis, initializeRedis } from "./config/redis";
 import { env } from "./config/env";
 import { runRenewalCron } from "./crons/renewal.cron";
+import { processEmailJobs } from "./processors/email.processor";
+import { closeEmailQueue } from "./queues/email.queue";
 
 /**
  * Worker entry point.
@@ -14,6 +16,7 @@ import { runRenewalCron } from "./crons/renewal.cron";
  */
 
 let shuttingDown = false;
+let emailWorker: ReturnType<typeof processEmailJobs> | null = null;
 
 export async function startWorker(): Promise<void> {
   await initializeDatabase();
@@ -23,8 +26,9 @@ export async function startWorker(): Promise<void> {
   console.log("[worker] redis connected");
 
   runRenewalCron();
+  emailWorker = processEmailJobs();
 
-  console.log(`[worker] ready in ${env.nodeEnv} mode, renewal cron registered`);
+  console.log(`[worker] ready in ${env.nodeEnv} mode, renewal cron and email processor registered`);
 }
 
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
@@ -42,8 +46,8 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   forceExit.unref();
 
   try {
-    // TODO: close BullMQ workers here first so in-flight jobs finish or are
-    // returned to the queue before the connections they depend on are torn down.
+    if (emailWorker) await emailWorker.close();
+    await closeEmailQueue();
     await closeRedis();
     await closeDatabase();
     clearTimeout(forceExit);

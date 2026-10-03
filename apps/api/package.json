@@ -9,6 +9,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/server.js",
     "admin:create": "ts-node src/scripts/create-admin.ts",
+    "db:seed": "ts-node src/scripts/seed-phase0.ts",
+    "db:reset": "ts-node src/scripts/reset-phase0.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "jest --runInBand",

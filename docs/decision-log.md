@@ -332,6 +332,23 @@ Store all pricing configuration and application settings in the database, making
 ### Result
 Pricing calculation is entirely DB-driven and configurable via `/api/admin/services`, `/api/admin/industries`, `/api/admin/worker-ranges`, `/api/admin/locations`, and `/api/admin/settings`.
 
+## 2026-10-05
+
+### Decision
+Support staff-created quotations with customizable line items (fees and discounts) and extended quotation statuses (`converted` and `cancelled`).
+
+### Why
+- Staff (agents, managers, admins) need to generate quotations on behalf of registered customers and apply adjustments like government fees and commercial discounts.
+- Line items are tracked individually with `kind`, `quantity`, `unit_price`, and `line_total` for transparent billing and itemization.
+- The pricing engine recalculates core worker and service charges, while extra lines are constrained (amounts > 0, max 20 extra lines, discounts capped at the calculated subtotal). Total calculations use integer cents to prevent floating point inaccuracies.
+- Lifecycle tracking expands with `cancelled` (from draft or sent) and `converted` (from accepted into an active project or subscription). Once converted or cancelled, further transitions are disallowed.
+
+### Result
+- Added migration `1790000000000-QuotationLineItems.ts` and updated `QuotationItemEntity`.
+- Added `POST /api/agent/quotations` and `POST /api/admin/quotations` with RBAC and zod validation.
+- Updated `QuotationStatus` and state machine transitions.
+
+
 
 
 

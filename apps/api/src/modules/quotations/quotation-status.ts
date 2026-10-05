@@ -7,15 +7,19 @@ export enum QuotationStatus {
   Accepted = "accepted",
   Rejected = "rejected",
   Expired = "expired",
+  Converted = "converted",
+  Cancelled = "cancelled",
 }
 
 const FLOW: Record<QuotationStatus, QuotationStatus[]> = {
-  [QuotationStatus.Draft]: [QuotationStatus.Sent, QuotationStatus.Rejected],
-  [QuotationStatus.Sent]: [QuotationStatus.UnderReview, QuotationStatus.Accepted, QuotationStatus.Rejected, QuotationStatus.Expired],
+  [QuotationStatus.Draft]: [QuotationStatus.Sent, QuotationStatus.Rejected, QuotationStatus.Cancelled],
+  [QuotationStatus.Sent]: [QuotationStatus.UnderReview, QuotationStatus.Accepted, QuotationStatus.Rejected, QuotationStatus.Expired, QuotationStatus.Cancelled],
   [QuotationStatus.UnderReview]: [QuotationStatus.Accepted, QuotationStatus.Rejected, QuotationStatus.Expired],
-  [QuotationStatus.Accepted]: [],
+  [QuotationStatus.Accepted]: [QuotationStatus.Converted],
   [QuotationStatus.Rejected]: [],
   [QuotationStatus.Expired]: [],
+  [QuotationStatus.Converted]: [],
+  [QuotationStatus.Cancelled]: [],
 };
 
 export function assertQuotationTransition(from: QuotationStatus, to: QuotationStatus): void {

@@ -4,6 +4,8 @@ import { successResponse } from "../../utils/response";
 import { customerService } from "./customer.service";
 import { quotationService } from "../quotations/quotation.service";
 import { QuotationIdParamSchema, QuotationRejectSchema, QuotationSchema } from "../quotations/quotation.schema";
+import { invoiceService } from "../payments/invoice.service";
+import { InvoiceIdParamSchema } from "../payments/invoice.schema";
 import { validate, validateParams } from "../../middleware/validate";
 
 export const customerRouter = Router();
@@ -65,7 +67,19 @@ customerRouter.get(
       throw new HttpError(401, "Authenticated user is required");
     }
 
-    return customerService.getMyInvoices(req.user.id);
+    return invoiceService.listCustomer(req.user.id);
+  }),
+);
+
+customerRouter.get(
+  "/me/invoices/:id",
+  validateParams(InvoiceIdParamSchema),
+  sendAsync((req) => {
+    if (!req.user) {
+      throw new HttpError(401, "Authenticated user is required");
+    }
+
+    return invoiceService.getCustomer(req.params.id, req.user.id);
   }),
 );
 

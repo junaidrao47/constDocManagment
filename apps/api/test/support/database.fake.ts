@@ -51,6 +51,23 @@ export const AppDataSource = {
     return created;
   },
 
+  async transaction<T>(work: (manager: any) => Promise<T>): Promise<T> {
+    const manager = {
+      find: async (target: unknown, options: unknown = {}) => AppDataSource.getRepository(target).find(options as any),
+      query: async (...args: unknown[]) => AppDataSource.query(...args),
+      save: async (target: unknown, input: unknown) => {
+        const repo = AppDataSource.getRepository(target);
+        return repo.save(input as any);
+      },
+      create: (target: unknown, partial: unknown = {}) => {
+        const repo = AppDataSource.getRepository(target);
+        return repo.create(partial as any);
+      },
+    };
+
+    return work(manager);
+  },
+
   // Accepts and ignores arguments: app.ts's health check calls query("SELECT 1").
   async query(..._parameters: unknown[]): Promise<unknown[]> {
     return [{ "?column?": 1 }];

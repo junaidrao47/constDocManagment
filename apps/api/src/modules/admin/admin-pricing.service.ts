@@ -78,36 +78,45 @@ async function findRangeOr404(id: string): Promise<WorkerRangeEntity> {
  * Also enforces that only the highest range may have an unlimited max (null).
  */
 async function assertNoOverlap(excludeId: string | null, newMin: number, newMax: number | null): Promise<void> {
-  const allActive = await AppDataSource.getRepository(WorkerRangeEntity).find({ where: { isActive: true } });
-  const others = allActive.filter((r) => r.id !== excludeId);
-
-  if (newMax === null) {
-    const existingOpen = others.find((r) => r.maxWorkers == null);
-    if (existingOpen) {
-      throw new HttpError(
-        400,
-        `Only the highest active range may have an unlimited max (existing open-ended range starts at ${existingOpen.minWorkers})`,
-      );
-    }
-
-    const hasHigherRange = others.some((r) => r.minWorkers >= newMin);
-    if (hasHigherRange) {
-      throw new HttpError(400, "Only the highest active range may have an unlimited max");
-    }
+  if (newMax !== null && newMin > newMax) {
+    throw new HttpError(400, "minWorkers must not be greater than maxWorkers");
   }
 
-  for (const existing of others) {
-    const eMin = existing.minWorkers;
-    const eMax = existing.maxWorkers ?? Infinity;
-    const cMax = newMax ?? Infinity;
+  const lockKey = 0x4d575247n;
+  await AppDataSource.transaction(async (manager) => {
+    await manager.query("SELECT pg_advisory_xact_lock($1)", [lockKey.toString()]);
 
-    if (newMin <= eMax && cMax >= eMin) {
-      throw new HttpError(
-        400,
-        `Range [${newMin}, ${newMax ?? "∞"}] overlaps with existing active range [${eMin}, ${existing.maxWorkers ?? "∞"}]`,
-      );
+    const allActive = await manager.find(WorkerRangeEntity, { where: { isActive: true } });
+    const others = allActive.filter((r) => r.id !== excludeId);
+
+    if (newMax === null) {
+      const existingOpen = others.find((r) => r.maxWorkers == null);
+      if (existingOpen) {
+        throw new HttpError(
+          400,
+          `Only the highest active range may have an unlimited max (existing open-ended range starts at ${existingOpen.minWorkers})`,
+        );
+      }
+
+      const hasHigherRange = others.some((r) => r.minWorkers >= newMin);
+      if (hasHigherRange) {
+        throw new HttpError(400, "Only the highest active range may have an unlimited max");
+      }
     }
-  }
+
+    for (const existing of others) {
+      const eMin = existing.minWorkers;
+      const eMax = existing.maxWorkers ?? Infinity;
+      const cMax = newMax ?? Infinity;
+
+      if (newMin <= eMax && cMax >= eMin) {
+        throw new HttpError(
+          400,
+          `Range [${newMin}, ${newMax ?? "∞"}] overlaps with existing active range [${eMin}, ${existing.maxWorkers ?? "∞"}]`,
+        );
+      }
+    }
+  });
 }
 
 // ─── Locations ────────────────────────────────────────────────────────────────

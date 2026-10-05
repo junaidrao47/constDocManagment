@@ -62,17 +62,11 @@ function toNumber(value: string | number | null | undefined): number {
 
 function pickWorkerRange(workerCount: number, workerRanges: PricingWorkerRange[]): PricingWorkerRange | null {
   const activeRanges = workerRanges.filter((range) => range.isActive !== false);
-  const matchedRange = activeRanges
-    .filter((range) => workerCount >= range.minWorkers && (range.maxWorkers == null || workerCount <= range.maxWorkers))
-    .sort((left, right) => left.minWorkers - right.minWorkers)[0];
-
-  if (matchedRange) {
-    return matchedRange;
-  }
-
-  return activeRanges
-    .filter((range) => workerCount >= range.minWorkers)
-    .sort((left, right) => right.minWorkers - left.minWorkers)[0] ?? null;
+  return (
+    activeRanges.find(
+      (range) => workerCount >= range.minWorkers && (range.maxWorkers == null || workerCount <= range.maxWorkers),
+    ) ?? null
+  );
 }
 
 /**
@@ -85,7 +79,11 @@ function pickWorkerRange(workerCount: number, workerRanges: PricingWorkerRange[]
  */
 export function calculateQuotation(input: PricingInput, dbData: PricingDbData): PricingOutput {
   const workerRange = pickWorkerRange(input.workerCount, dbData.workerRanges);
-  const workerBasePrice = toNumber(workerRange?.basePrice);
+  if (!workerRange) {
+    throw new Error("No active worker range covers the requested worker count");
+  }
+
+  const workerBasePrice = toNumber(workerRange.basePrice);
   const locationMultiplier = toNumber(dbData.location?.multiplier) || 1;
   const cityFee = toNumber(dbData.location?.cityFee);
   const industryWeight = dbData.industryWeight != null ? toNumber(dbData.industryWeight) || 1 : 1;

@@ -101,7 +101,7 @@ export const publicService = {
       AppDataSource.getRepository(WorkerRangeEntity).find({ where: { isActive: true } }),
       AppDataSource.getRepository(LocationEntity).findOne({ where: { id: input.locationId, isActive: true } }),
       AppDataSource.getRepository(ServiceEntity).find({ where: { isActive: true } }),
-      AppDataSource.getRepository(IndustryEntity).findOne({ where: { id: input.industryId } }),
+      AppDataSource.getRepository(IndustryEntity).findOne({ where: { id: input.industryId, isActive: true } }),
       getSettingValue("currency"),
       getSettingValue("quote_validity_days"),
     ]);
@@ -110,13 +110,24 @@ export const publicService = {
       throw new HttpError(404, "Location not found");
     }
 
+    if (!industry) {
+      throw new HttpError(404, "Industry not found");
+    }
+
     const serviceIds = new Set(services.map((service) => service.id));
     const unknownService = input.serviceIds.find((serviceId) => !serviceIds.has(serviceId));
     if (unknownService) {
       throw new HttpError(404, "Service not found");
     }
 
-    const industryWeight = industry?.priceWeight ?? "1";
+    const hasMatchingRange = workerRanges.some(
+      (range) => input.workerCount >= range.minWorkers && (range.maxWorkers == null || input.workerCount <= range.maxWorkers),
+    );
+    if (!hasMatchingRange) {
+      throw new HttpError(400, "No active worker range covers the requested worker count");
+    }
+
+    const industryWeight = industry.priceWeight ?? "1";
     const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
     const quoteValidityDays = typeof validityRaw === "number" && validityRaw >= 1 ? Math.round(validityRaw) : 15;
 

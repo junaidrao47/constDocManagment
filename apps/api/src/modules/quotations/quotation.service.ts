@@ -38,7 +38,7 @@ export const quotationService = {
     const calculated = await publicService.calculate(input);
     const quotation = quotations().create({
       customerId, industryId: input.industryId, locationId: input.locationId, workerCount: input.workerCount,
-      totalPrice: calculated.total.toFixed(2), status: QuotationStatus.Draft,
+      totalPrice: calculated.total.toFixed(2), currency: calculated.currency, status: QuotationStatus.Draft,
       expiresAt: new Date(Date.now() + validityDays * 86_400_000),
       items: calculated.serviceCharges.map((item) => ({ serviceId: item.serviceId, price: item.price.toFixed(2) } as QuotationItemEntity)),
     });
@@ -85,7 +85,7 @@ export const quotationService = {
     );
 
     if (nextStatus === QuotationStatus.Sent && quotation.customer?.email) {
-      const currencyRaw = await getSettingValue("currency");
+      const currencyRaw = quotation.currency ?? (await getSettingValue("currency"));
       const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
       void sendEmail({
         to: quotation.customer.email,

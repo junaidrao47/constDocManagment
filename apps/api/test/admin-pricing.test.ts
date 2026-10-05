@@ -550,6 +550,52 @@ describe("pricing engine: industry weight and dynamic settings", () => {
     expect(Math.abs(expiresAt - expectedExpiry)).toBeLessThan(5000);
   });
 
+  it("rejects inactive or unknown industries in the public calculator", async () => {
+    const locationId = crypto.randomUUID();
+    fakeDb.locations().seed({ id: locationId, state: "Punjab", city: "Lahore", multiplier: "1", cityFee: "0", isActive: true });
+    fakeDb.workerRanges().seed({ id: crypto.randomUUID(), minWorkers: 1, maxWorkers: 10, basePrice: "1000", isActive: true });
+    fakeDb.industries().seed({ id: crypto.randomUUID(), name: "Inactive", priceWeight: "1.0000", isActive: false });
+
+    const missingRes = await request(testApp()).post("/api/public/quotations/calculate").send({
+      workerCount: 5,
+      locationId,
+      serviceIds: [],
+      industryId: crypto.randomUUID(),
+    });
+    expect(missingRes.status).toBe(404);
+    expect(missingRes.body.error).toMatch(/industry/i);
+
+    const inactiveId = crypto.randomUUID();
+    fakeDb.industries().seed({ id: inactiveId, name: "Inactive", priceWeight: "1.0000", isActive: false });
+    const inactiveRes = await request(testApp()).post("/api/public/quotations/calculate").send({
+      workerCount: 5,
+      locationId,
+      serviceIds: [],
+      industryId: inactiveId,
+    });
+    expect(inactiveRes.status).toBe(404);
+    expect(inactiveRes.body.error).toMatch(/industry/i);
+  });
+
+  it("rejects worker counts that fall into a gap between ranges", async () => {
+    const locationId = crypto.randomUUID();
+    const industryId = crypto.randomUUID();
+    fakeDb.locations().seed({ id: locationId, state: "Punjab", city: "Lahore", multiplier: "1", cityFee: "0", isActive: true });
+    fakeDb.workerRanges().seed({ id: crypto.randomUUID(), minWorkers: 1, maxWorkers: 10, basePrice: "1000", isActive: true });
+    fakeDb.workerRanges().seed({ id: crypto.randomUUID(), minWorkers: 20, maxWorkers: 30, basePrice: "2000", isActive: true });
+    fakeDb.industries().seed({ id: industryId, name: "Tech", priceWeight: "1.0000", isActive: true });
+
+    const res = await request(testApp()).post("/api/public/quotations/calculate").send({
+      workerCount: 15,
+      locationId,
+      serviceIds: [],
+      industryId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/worker range/i);
+  });
+
   it("uses currency setting in quotation Sent email instead of PKR", async () => {
     seedSetting("currency", "EUR");
 

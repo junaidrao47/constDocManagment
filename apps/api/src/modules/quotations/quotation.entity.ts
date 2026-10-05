@@ -37,6 +37,9 @@ export class QuotationEntity extends AppBaseEntity {
 	@Column({ name: "total_price", type: "decimal", precision: 12, scale: 2 })
 	totalPrice!: string;
 
+	@Column({ type: "varchar", length: 3, default: "MXN" })
+	currency!: string;
+
 	@Column({ type: "varchar", length: 50 })
 	status!: string;
 

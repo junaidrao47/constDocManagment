@@ -34,19 +34,32 @@ export const IndustryUpdateSchema = z.object({
 
 // --- Worker Ranges ---
 
-export const WorkerRangeCreateSchema = z.object({
-  minWorkers: z.coerce.number().int().min(0).max(1_000_000),
-  maxWorkers: z.coerce.number().int().min(1).max(1_000_000).nullable().optional(),
-  basePrice: z.coerce.number().finite().min(0).max(999_999_999.99),
-  isActive: z.boolean().optional().default(true),
-});
+export const WorkerRangeCreateSchema = z
+  .object({
+    minWorkers: z.coerce.number().int().min(0).max(1_000_000),
+    maxWorkers: z.coerce.number().int().min(1).max(1_000_000).nullable().optional(),
+    basePrice: z.coerce.number().finite().min(0).max(999_999_999.99),
+    isActive: z.boolean().optional().default(true),
+  })
+  .refine((data) => data.maxWorkers == null || data.minWorkers <= data.maxWorkers, {
+    message: "minWorkers must not be greater than maxWorkers",
+    path: ["minWorkers"],
+  });
 
-export const WorkerRangeUpdateSchema = z.object({
-  minWorkers: z.coerce.number().int().min(0).max(1_000_000).optional(),
-  maxWorkers: z.coerce.number().int().min(1).max(1_000_000).nullable().optional(),
-  basePrice: z.coerce.number().finite().min(0).max(999_999_999.99).optional(),
-  isActive: z.boolean().optional(),
-});
+export const WorkerRangeUpdateSchema = z
+  .object({
+    minWorkers: z.coerce.number().int().min(0).max(1_000_000).optional(),
+    maxWorkers: z.coerce.number().int().min(1).max(1_000_000).nullable().optional(),
+    basePrice: z.coerce.number().finite().min(0).max(999_999_999.99).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (data) => data.maxWorkers == null || data.minWorkers == null || data.minWorkers <= data.maxWorkers,
+    {
+      message: "minWorkers must not be greater than maxWorkers",
+      path: ["minWorkers"],
+    },
+  );
 
 // --- Locations ---
 

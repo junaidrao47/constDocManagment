@@ -1,11 +1,10 @@
 import { AppDataSource } from "../../config/database";
 import { QuotationStatusHistoryEntity } from "../../entities/quotation-status-history.entity";
 import { QuotationItemEntity } from "../../entities/quotation-item.entity";
-import { NotificationLogEntity } from "../../entities/notification-log.entity";
 import { HttpError } from "../../utils/http-error";
-import { sendEmail } from "../../utils/email";
 import { UserEntity, UserRole } from "../users/user.entity";
 import { publicService, getSettingValue } from "../public/public.service";
+import { notify, type NotificationType } from "../notifications/notify.service";
 import { PricingInput } from "./pricing.engine";
 import { QuotationEntity } from "./quotation.entity";
 import { assertQuotationTransition, isQuotationStatus, QuotationStatus } from "./quotation-status";
@@ -250,26 +249,25 @@ export const quotationService = {
     await quotations().save(quotation);
     await history().save(history().create({ quotationId: id, fromStatus: previous, toStatus: nextStatus, changedBy: actor.id, note: note ?? null }));
 
-    const notificationRepository = AppDataSource.getRepository(NotificationLogEntity);
-    await notificationRepository.save(
-      notificationRepository.create({
-        userId: quotation.customerId,
-        type: "quotation_status_change",
-        channel: "email",
-        status: "queued",
-        sentAt: null,
-      }),
-    );
-
-    if (nextStatus === QuotationStatus.Sent && quotation.customer?.email) {
-      const currencyRaw = quotation.currency ?? (await getSettingValue("currency"));
-      const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
-      void sendEmail({
-        to: quotation.customer.email,
-        subject: "Your quotation is ready",
-        text: `Your quotation ${quotation.id} is ready for review. Total: ${currency} ${quotation.totalPrice}.`,
-      });
-    }
+    const notificationType: Partial<Record<QuotationStatus, NotificationType>> = {
+      [QuotationStatus.Sent]: "quotation_sent",
+      [QuotationStatus.Accepted]: "quotation_accepted",
+      [QuotationStatus.Rejected]: "quotation_rejected",
+    };
+    const currencyRaw = quotation.currency ?? (await getSettingValue("currency"));
+    const currency = typeof currencyRaw === "string" ? currencyRaw : "MXN";
+    // Every transition is recorded; only sent/accepted/rejected also email the customer.
+    await notify({
+      userId: quotation.customerId,
+      type: notificationType[nextStatus as QuotationStatus] ?? "quotation_status_changed",
+      data: {
+        quotationNumber: quotation.id,
+        status: nextStatus,
+        currency,
+        total: quotation.totalPrice,
+        note: note ?? "",
+      },
+    });
     return this.get(id, actor);
   },
 

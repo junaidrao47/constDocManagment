@@ -10,7 +10,7 @@ import {
   removeLocalDocument,
 } from "../../utils/s3";
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
-import { NotificationLogEntity } from "../../entities/notification-log.entity";
+import { notify } from "../notifications/notify.service";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import { ServiceEntity } from "../../entities/service.entity";
@@ -43,6 +43,13 @@ export interface UpdateDocumentStatusInput {
   fromStatus?: DocumentStatus;
   toStatus: DocumentStatus;
   note?: string;
+}
+
+export interface AdminDocumentListQuery {
+  status?: DocumentStatus;
+  customerId?: string;
+  page: number;
+  pageSize: number;
 }
 
 export interface LocalDocumentUpload {
@@ -172,6 +179,30 @@ function assertCanUploadApprovedVersion(document: DocumentEntity, actor: Documen
 }
 
 export const documentService = {
+  async listAdminDocuments(query: AdminDocumentListQuery) {
+    assertDatabaseReady();
+
+    const where = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.customerId ? { customerId: query.customerId } : {}),
+    };
+    const [documents, total] = await AppDataSource.getRepository(DocumentEntity).findAndCount({
+      where,
+      order: { updatedAt: "DESC" },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
+    return {
+      data: await Promise.all(documents.map(normalizeDocument)),
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.ceil(total / query.pageSize),
+      },
+    };
+  },
+
   async listReviewDocuments(status?: string) {
     assertDatabaseReady();
 
@@ -322,7 +353,7 @@ export const documentService = {
     return normalizeDocument(document);
   },
 
-  async updateDocumentStatus(actor: DocumentActor, documentId: string, input: UpdateDocumentStatusInput) {
+  async updateDocumentStatus(actor: DocumentActor, documentId: string, input: UpdateDocumentStatusInput, adminOverride = false) {
     assertDatabaseReady();
 
     // `authenticate` already read this user's current row, so the role here is
@@ -330,6 +361,12 @@ export const documentService = {
     // baked into a token.
     if (!canMutateDocumentStatus(actor.role)) {
       throw new HttpError(403, "Forbidden");
+    }
+    if (adminOverride && actor.role !== UserRole.Admin) {
+      throw new HttpError(403, "Only admins may override document status");
+    }
+    if (input.toStatus === DocumentStatus.Rejected && (input.note?.trim().length ?? 0) < 5) {
+      throw new HttpError(400, "A rejection note of at least 5 characters is required");
     }
 
     const documentRepository = AppDataSource.getRepository(DocumentEntity);
@@ -340,7 +377,9 @@ export const documentService = {
       throw new HttpError(409, "Document status mismatch");
     }
 
-    assertDocumentStatusTransition(document.status, input.toStatus);
+    if (!adminOverride) {
+      assertDocumentStatusTransition(document.status, input.toStatus);
+    }
 
     await historyRepository.save(
       historyRepository.create({
@@ -355,16 +394,18 @@ export const documentService = {
     document.status = input.toStatus;
     const savedDocument = await documentRepository.save(document);
 
-    const notificationRepository = AppDataSource.getRepository(NotificationLogEntity);
-    await notificationRepository.save(
-      notificationRepository.create({
-        userId: document.customerId,
-        type: "document_status_change",
-        channel: "email",
-        status: "queued",
-        sentAt: null,
-      }),
-    );
+    // Every transition is recorded; only approved/rejected also email the customer.
+    const type =
+      input.toStatus === DocumentStatus.Approved
+        ? "document_approved"
+        : input.toStatus === DocumentStatus.Rejected
+          ? "document_rejected"
+          : "document_status_changed";
+    await notify({
+      userId: document.customerId,
+      type,
+      data: { documentName: document.fileName, status: input.toStatus, note: input.note ?? "", documentUrl: `${process.env.WEB_URL ?? ""}/portal/documents` },
+    });
 
     return normalizeDocument(savedDocument);
   },

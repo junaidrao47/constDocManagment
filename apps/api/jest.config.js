@@ -40,6 +40,8 @@ module.exports = {
     "config/database$": "<rootDir>/test/support/database.fake.ts",
     "config/redis$": "<rootDir>/test/support/redis.fake.ts",
     "utils/email$": "<rootDir>/test/support/email.fake.ts",
+    // Matches the import string ("./email-queue" inside notifications), not the resolved path.
+    "(^|/)email-queue$": "<rootDir>/test/support/email-queue.fake.ts",
   },
 
   clearMocks: true,

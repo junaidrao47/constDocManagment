@@ -12,6 +12,7 @@ import { UserRole } from "../../src/modules/users/user.entity";
 import { fakeDb, resetFakeDatabase } from "./database.fake";
 export { fakeDb } from "./database.fake";
 import { resetOutbox } from "./email.fake";
+import { resetQueuedEmails } from "./email-queue.fake";
 import { resetFakeRedis } from "./redis.fake";
 
 /** Shared setup for the API tests: one app instance, seed helpers, token minting. */
@@ -157,6 +158,7 @@ export function resetTestState(): void {
   resetFakeDatabase();
   resetFakeRedis();
   resetOutbox();
+  resetQueuedEmails();
 
   while (writtenFiles.length > 0) {
     const filePath = writtenFiles.pop() as string;

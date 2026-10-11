@@ -356,3 +356,20 @@ Support staff-created quotations with customizable line items (fees and discount
 
 
 
+## 2026-10-11
+
+### Decision
+Status-change notifications are enqueued to the BullMQ `email` queue through `apps/api/src/modules/notifications/notify.service.ts` instead of being written to `notifications_log` only or sent inline from request handlers.
+
+### Why
+- Email delivery must not block or fail an API request; the worker sends asynchronously and moves exhausted jobs to `email-dead-letter`. Known gap: the API-side `Queue` in notify.service.ts has no `defaultJobOptions`, so API-enqueued jobs use BullMQ's default single attempt (the worker queue's 3-attempt backoff does not apply to them).
+- One dispatcher maps each event type (quotation sent/accepted/rejected, document approved/rejected, invoice issued, payment recorded) to a Handlebars template rendered by the worker.
+- A `notifications_log` row is written as `queued` per event and flipped to `failed` if enqueueing fails, so delivery problems are visible.
+
+### Result
+- `notify()` is called on every quotation and document status change. Sent/accepted/rejected (quotation) and approved/rejected (document) enqueue an email; other transitions are logged as `channel=in_app, status=recorded` (types `quotation_status_changed`, `document_status_changed`) so every change is still recorded. Invoice and payment events are defined but not yet emitted.
+- Quotation emails use the quotation currency, falling back to the `currency` setting, then MXN.
+- The Redis/BullMQ connection lives in `modules/notifications/email-queue.ts`; tests map it to `test/support/email-queue.fake.ts` (same pattern as config/redis). Previously the suite opened a real Redis connection that kept Jest from exiting.
+- Added `bullmq` to the API, templates `quotation-accepted`, `quotation-rejected`, `payment-recorded`.
+- Added `GET /api/admin/documents` (paginated) and `PATCH /api/admin/documents/:id/status` (admin override, note required).
+

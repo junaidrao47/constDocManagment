@@ -596,7 +596,7 @@ describe("pricing engine: industry weight and dynamic settings", () => {
     expect(res.body.error).toMatch(/worker range/i);
   });
 
-  it("uses currency setting in quotation Sent email instead of PKR", async () => {
+  it("uses the currency setting in the quotation Sent email when the quotation has none", async () => {
     seedSetting("currency", "EUR");
 
     const customer = await seedUser({ role: UserRole.Customer, email: "client.eur@test.com" });
@@ -628,9 +628,8 @@ describe("pricing engine: industry weight and dynamic settings", () => {
 
     expect(response.status).toBe(200);
 
-    const { outbox } = await import("./support/email.fake");
-    const sentEmail = outbox.find((msg) => msg.to === customer.email);
-    expect(sentEmail).toBeDefined();
-    expect(sentEmail?.text).toContain("Total: EUR 8500.00.");
+    const { queuedEmails } = await import("./support/email-queue.fake");
+    const job = queuedEmails.find((email) => email.to === customer.email);
+    expect(job).toMatchObject({ templateName: "quotation-ready", data: expect.objectContaining({ currency: "EUR", total: "8500.00" }) });
   });
 });

@@ -13,6 +13,8 @@ import { packageService } from "../packages/package.service";
 import { adminPricingService } from "./admin-pricing.service";
 import { invoiceService } from "../payments/invoice.service";
 import { InvoiceIdParamSchema, InvoiceListQuerySchema, PaymentCreateSchema } from "../payments/invoice.schema";
+import { DocumentIdParamSchema, AdminDocumentListQuerySchema, AdminUpdateDocumentStatusSchema } from "../documents/document.schema";
+import { documentService } from "../documents/document.service";
 import {
   IndustryCreateSchema,
   IndustryUpdateSchema,
@@ -258,15 +260,25 @@ adminRouter.put(
 
 // ─── Placeholders ───────────────────────────────────────────────────────────
 
-/** Phase 4: review queue across all customers. */
-adminRouter.get("/documents", (_req, res) => {
-  res.json({ success: true, data: [], message: "not implemented" });
-});
+adminRouter.get(
+  "/documents",
+  validateQuery(AdminDocumentListQuerySchema),
+  send((req) => documentService.listAdminDocuments(req.query as unknown as ReturnType<typeof AdminDocumentListQuerySchema.parse>)),
+);
 
-/** Phase 4: admin override of a document decision. */
-adminRouter.patch("/documents/:id/status", (_req, res) => {
-  res.json({ success: true, data: {}, message: "not implemented" });
-});
+adminRouter.patch(
+  "/documents/:id/status",
+  validateParams(DocumentIdParamSchema),
+  validate(AdminUpdateDocumentStatusSchema),
+  send((req) =>
+    documentService.updateDocumentStatus(
+      { id: actorId(req), role: req.user!.role },
+      req.params.id,
+      req.body,
+      true,
+    ),
+  ),
+);
 
 /** Phase 5: subscription oversight. */
 adminRouter.get("/subscriptions", (_req, res) => {

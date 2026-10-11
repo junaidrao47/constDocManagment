@@ -9,6 +9,7 @@ import { LocationEntity } from "../../src/entities/location.entity";
 import { IndustryEntity } from "../../src/entities/industry.entity";
 import { PackageEntity } from "../../src/modules/packages/package.entity";
 import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
+import { QuotationItemEntity } from "../../src/entities/quotation-item.entity";
 import { AppSettingEntity } from "../../src/entities/app-setting.entity";
 import { FakeRepository } from "./fake-repository";
 
@@ -47,6 +48,13 @@ export const AppDataSource = {
     }
 
     const created = new FakeRepository<Record<string, unknown>>(labelFor(target));
+    if (target === QuotationEntity) {
+      // Mirrors TypeORM `relations: { customer: true }`: the full user row, secrets
+      // included, exactly what a service would receive from Postgres.
+      created.defineRelation("customer", (row) =>
+        AppDataSource.getRepository(UserEntity).all().find((user) => user.id === row.customerId),
+      );
+    }
     repositories.set(target, created);
     return created;
   },
@@ -110,6 +118,7 @@ export const fakeDb = {
   packages: () => AppDataSource.getRepository(PackageEntity),
   notifications: () => AppDataSource.getRepository(NotificationLogEntity),
   quotations: () => AppDataSource.getRepository(QuotationEntity),
+  quotationItems: () => AppDataSource.getRepository(QuotationItemEntity),
   appSettings: () => AppDataSource.getRepository(AppSettingEntity),
 };
 

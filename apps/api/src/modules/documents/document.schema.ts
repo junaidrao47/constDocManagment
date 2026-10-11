@@ -16,13 +16,35 @@ export const CreateDocumentUploadSchema = z.object({
   serviceId: z.string().uuid().optional(),
 });
 
-export const UpdateDocumentStatusSchema = z.object({
+const documentStatusUpdateShape = {
   // Optional optimistic-concurrency guard: when supplied, the change is rejected
   // with 409 unless the document is still in this status, so two reviewers acting
   // at once cannot silently overwrite each other.
   fromStatus: DocumentStatusSchema.optional(),
   toStatus: DocumentStatusSchema,
   note: z.string().trim().max(1000).optional(),
+};
+
+export const UpdateDocumentStatusSchema = z.object(documentStatusUpdateShape).superRefine((input, context) => {
+  if (input.toStatus === DocumentStatus.Rejected && (input.note?.trim().length ?? 0) < 5) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["note"],
+      message: "A rejection note of at least 5 characters is required",
+    });
+  }
+});
+
+export const AdminUpdateDocumentStatusSchema = z.object({
+  ...documentStatusUpdateShape,
+  note: z.string().trim().min(5, "A note of at least 5 characters is required").max(1000),
+});
+
+export const AdminDocumentListQuerySchema = z.object({
+  status: DocumentStatusSchema.optional(),
+  customerId: z.string().uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
 /**

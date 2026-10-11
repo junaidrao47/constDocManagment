@@ -81,7 +81,7 @@ export const LocationUpdateSchema = z.object({
 
 // --- Settings ---
 
-const ALLOWED_KEYS = ["currency", "quote_validity_days"] as const;
+const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days"] as const;
 export type SettingKey = (typeof ALLOWED_KEYS)[number];
 
 export const SettingKeyParamSchema = z.object({
@@ -100,6 +100,10 @@ export const SettingUpdateSchema = z.discriminatedUnion("key", [
   }),
   z.object({
     key: z.literal("quote_validity_days"),
+    value: z.coerce.number().int().min(1).max(365),
+  }),
+  z.object({
+    key: z.literal("payment_terms_days"),
     value: z.coerce.number().int().min(1).max(365),
   }),
 ]);

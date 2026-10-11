@@ -8,13 +8,16 @@ import { emailDeadLetterQueue, EMAIL_QUEUE_NAME, type EmailJobData, type FailedE
 
 const templateCache = new Map<string, Handlebars.TemplateDelegate>();
 const templateNames: ReadonlySet<EmailJobData["templateName"]> = new Set([
-  "document-approved", "document-rejected", "quotation-ready", "invoice", "renewal-reminder",
+  "document-approved", "document-rejected", "quotation-ready", "quotation-accepted", "quotation-rejected", "invoice", "payment-recorded", "renewal-reminder",
 ]);
 const defaultSubjects: Record<EmailJobData["templateName"], string> = {
   "document-approved": "Your document was approved",
   "document-rejected": "Action required for your document",
   "quotation-ready": "Your quotation is ready",
+  "quotation-accepted": "Your quotation was accepted",
+  "quotation-rejected": "Your quotation was rejected",
   invoice: "Your invoice is ready",
+  "payment-recorded": "Your payment was recorded",
   "renewal-reminder": "Renewal reminder",
 };
 

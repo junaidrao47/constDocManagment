@@ -332,6 +332,21 @@ Store all pricing configuration and application settings in the database, making
 ### Result
 Pricing calculation is entirely DB-driven and configurable via `/api/admin/services`, `/api/admin/industries`, `/api/admin/worker-ranges`, `/api/admin/locations`, and `/api/admin/settings`.
 
+## 2026-10-05
+
+### Decision
+Support staff-created quotations with customizable line items (fees and discounts) and extended quotation statuses (`converted` and `cancelled`).
+
+### Why
+- Staff (agents, managers, admins) need to generate quotations on behalf of registered customers and apply adjustments like government fees and commercial discounts.
+- Line items are tracked individually with `kind`, `quantity`, `unit_price`, and `line_total` for transparent billing and itemization.
+- The pricing engine recalculates core worker and service charges, while extra lines are constrained (amounts > 0, max 20 extra lines, discounts capped at the calculated subtotal). Total calculations use integer cents to prevent floating point inaccuracies.
+- Lifecycle tracking expands with `cancelled` (from draft or sent) and `converted` (from accepted into an active project or subscription). Once converted or cancelled, further transitions are disallowed.
+
+### Result
+- Added migration `1790000000000-QuotationLineItems.ts` and updated `QuotationItemEntity`.
+- Added `POST /api/agent/quotations` and `POST /api/admin/quotations` with RBAC and zod validation.
+- Updated `QuotationStatus` and state machine transitions.
 
 
 
@@ -339,3 +354,65 @@ Pricing calculation is entirely DB-driven and configurable via `/api/admin/servi
 
 
 
+
+
+## 2026-10-11
+
+### Decision
+Status-change notifications are enqueued to the BullMQ `email` queue through `apps/api/src/modules/notifications/notify.service.ts` instead of being written to `notifications_log` only or sent inline from request handlers.
+
+### Why
+- Email delivery must not block or fail an API request; the worker sends asynchronously and moves exhausted jobs to `email-dead-letter`. Known gap: the API-side `Queue` in notify.service.ts has no `defaultJobOptions`, so API-enqueued jobs use BullMQ's default single attempt (the worker queue's 3-attempt backoff does not apply to them).
+- One dispatcher maps each event type (quotation sent/accepted/rejected, document approved/rejected, invoice issued, payment recorded) to a Handlebars template rendered by the worker.
+- A `notifications_log` row is written as `queued` per event and flipped to `failed` if enqueueing fails, so delivery problems are visible.
+
+### Result
+- `notify()` is called on every quotation and document status change. Sent/accepted/rejected (quotation) and approved/rejected (document) enqueue an email; other transitions are logged as `channel=in_app, status=recorded` (types `quotation_status_changed`, `document_status_changed`) so every change is still recorded. Invoice and payment events are defined but not yet emitted.
+- Quotation emails use the quotation currency, falling back to the `currency` setting, then MXN.
+- The Redis/BullMQ connection lives in `modules/notifications/email-queue.ts`; tests map it to `test/support/email-queue.fake.ts` (same pattern as config/redis). Previously the suite opened a real Redis connection that kept Jest from exiting.
+- Added `bullmq` to the API, templates `quotation-accepted`, `quotation-rejected`, `payment-recorded`.
+- Added `GET /api/admin/documents` (paginated) and `PATCH /api/admin/documents/:id/status` (admin override, note required).
+
+
+## 2026-10-11
+
+### Decision
+API responses never embed a raw `UserEntity`. Services pass any loaded user relation through `toPublicUser()` (`apps/api/src/utils/serialize-user.ts`), exposing only `id, email, name, phone, role`.
+
+### Why
+- Quotation endpoints loaded `relations: { customer: true }` and returned the entity, leaking every customer's `passwordHash` and `tokensValidFrom`. Agents can list all quotations, so any agent could collect every customer's bcrypt hash.
+- An audit of every user-loading path found quotations to be the only leak: auth, users, admin users and customer profile already use explicit serializers; document and payment user relations are declared but never loaded.
+
+### Result
+- Sanitized in `quotation.service.ts` `list()`/`get()`, which back all 14 JSON quotation endpoints (admin, agent, customer, `/api/quotations/:id`).
+- `test/no-user-secrets.test.ts` covers each endpoint; the fake DB now hydrates `QuotationEntity.customer` from the users table so the tests fail without the fix.
+
+
+## 2026-10-11
+
+### Decision
+The Phase-0 demo seed (`apps/api/src/scripts/seed-phase0.ts`) uses Mexican locations and industries and adds a second customer and agent.
+
+### Why
+- The client is Mexican (currency MXN); the earlier Punjab/Lahore location did not fit the demo.
+- Phase E agent–customer assignment scoping needs more than one customer and agent to demonstrate.
+
+### Result
+- Locations: `Ciudad de México` (×1.15, fee 3500), `Nuevo León / Monterrey` (×1.10, 3000), `Jalisco / Guadalajara` (×1.00, 2500). CDMX backs the sample quotation.
+- Industries carry `priceWeight`: Construction 1, Manufacturing 1.2, Logistics 1.1.
+- Added `customer2@test.com` and `agent2@test.com` (same demo passwords as the Phase-0 users).
+- The seed stays additive (find-or-create), so existing databases keep their old rows; use `npm run db:reset` for a clean Mexican-only dataset.
+
+
+## 2026-10-11
+
+### Decision
+Added migration `1820000000000-DocumentApprovedUpload` to create the `documents.approved_*` columns.
+
+### Why
+- `DocumentEntity` has declared `approvedFileName`, `approvedS3Key`, `approvedUploadedBy`, `approvedUploadedAt` since the approved-upload feature was added, but no migration ever created those columns. Every query selecting a document (customer dashboard, documents page, admin/staff review queues, approved downloads) failed at runtime with `column DocumentEntity.approved_file_name does not exist`.
+- The gap was invisible to the test suite, which runs against an in-memory fake DB, not the migrated Postgres schema.
+
+### Result
+- The migration adds the four columns (nullable) plus `FK_documents_approved_uploaded_by` → `users(id) ON DELETE SET NULL`, matching the entity.
+- `down()` drops the constraint then the columns. Applied with `npm run db:migrate`; the customer dashboard and document endpoints now return 200.

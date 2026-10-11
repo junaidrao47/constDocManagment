@@ -27,7 +27,7 @@ export async function closeEmailQueue(): Promise<void> {
 
 export interface EmailJobData {
 	to: string;
-	templateName: "document-approved" | "document-rejected" | "quotation-ready" | "invoice" | "renewal-reminder";
+		templateName: "document-approved" | "document-rejected" | "quotation-ready" | "quotation-accepted" | "quotation-rejected" | "invoice" | "payment-recorded" | "renewal-reminder";
 	subject?: string;
 	data: Record<string, unknown>;
 }

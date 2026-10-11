@@ -3,6 +3,7 @@ import { DocumentStatus } from "../src/modules/documents/document-status";
 import { QuotationStatus } from "../src/modules/quotations/quotation-status";
 import { UserRole } from "../src/modules/users/user.entity";
 import { bearer, fakeDb, mintToken, resetTestState, seedDocument, seedUser, testApp } from "./support/harness";
+import { queuedEmails } from "./support/email-queue.fake";
 
 beforeEach(() => resetTestState());
 
@@ -20,7 +21,9 @@ describe("status change notifications", () => {
     expect(response.status).toBe(200);
     const notifications = await fakeDb.notifications().find({ where: { userId: customer.id } });
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: "document_status_change", channel: "email", status: "queued" });
+    // under_review has no email template: the change is recorded, nothing is enqueued.
+    expect(notifications[0]).toMatchObject({ type: "document_status_changed", channel: "in_app", status: "recorded" });
+    expect(queuedEmails).toHaveLength(0);
   });
 
   it("records a notification when a quotation status changes", async () => {
@@ -54,6 +57,7 @@ describe("status change notifications", () => {
     expect(response.status).toBe(200);
     const notifications = await fakeDb.notifications().find({ where: { userId: customer.id } });
     expect(notifications).toHaveLength(1);
-    expect(notifications[0]).toMatchObject({ type: "quotation_status_change", channel: "email", status: "queued" });
+    expect(notifications[0]).toMatchObject({ type: "quotation_sent", channel: "email", status: "queued" });
+    expect(queuedEmails).toEqual([expect.objectContaining({ to: customer.email, templateName: "quotation-ready" })]);
   });
 });

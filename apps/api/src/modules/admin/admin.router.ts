@@ -7,10 +7,14 @@ import { ListUsersQuerySchema, SetUserStatusSchema, UserIdParamSchema } from "./
 import { AdminEmailSchema } from "./admin-email.schema";
 import { sendEmail } from "../../utils/email";
 import { quotationService } from "../quotations/quotation.service";
-import { QuotationIdParamSchema, QuotationStatusSchema } from "../quotations/quotation.schema";
+import { QuotationIdParamSchema, QuotationStatusSchema, StaffQuotationCreateSchema } from "../quotations/quotation.schema";
 import { PackageIdParamSchema, PackageSchema } from "../packages/package.schema";
 import { packageService } from "../packages/package.service";
 import { adminPricingService } from "./admin-pricing.service";
+import { invoiceService } from "../payments/invoice.service";
+import { InvoiceIdParamSchema, InvoiceListQuerySchema, PaymentCreateSchema } from "../payments/invoice.schema";
+import { DocumentIdParamSchema, AdminDocumentListQuerySchema, AdminUpdateDocumentStatusSchema } from "../documents/document.schema";
+import { documentService } from "../documents/document.service";
 import {
   IndustryCreateSchema,
   IndustryUpdateSchema,
@@ -102,9 +106,39 @@ adminRouter.post(
 // ─── Quotations ───────────────────────────────────────────────────────────────
 
 adminRouter.get("/quotations", send((req) => quotationService.list({ id: actorId(req), role: req.user!.role })));
+adminRouter.post("/quotations", validate(StaffQuotationCreateSchema), send((req) => quotationService.staffCreate(req.body, { id: actorId(req), role: req.user!.role }), 201));
 adminRouter.get("/quotations/:id", validateParams(QuotationIdParamSchema), send((req) => quotationService.get(req.params.id, { id: actorId(req), role: req.user!.role })));
 adminRouter.patch("/quotations/:id/status", validateParams(QuotationIdParamSchema), validate(QuotationStatusSchema), send((req) => quotationService.transition(req.params.id, req.body.status, { id: actorId(req), role: req.user!.role }, req.body.note)));
 adminRouter.get("/quotations/:id/history", validateParams(QuotationIdParamSchema), send((req) => quotationService.history(req.params.id, { id: actorId(req), role: req.user!.role })));
+adminRouter.post(
+  "/quotations/:id/invoice",
+  validateParams(QuotationIdParamSchema),
+  send((req) => invoiceService.createFromQuotation(req.params.id), 201),
+);
+
+// ─── Invoices and manual payments ───────────────────────────────────────────
+
+adminRouter.get(
+  "/invoices",
+  validateQuery(InvoiceListQuerySchema),
+  send((req) => invoiceService.listAdmin(req.query as unknown as ReturnType<typeof InvoiceListQuerySchema.parse>)),
+);
+adminRouter.get(
+  "/invoices/:id",
+  validateParams(InvoiceIdParamSchema),
+  send((req) => invoiceService.getAdmin(req.params.id)),
+);
+adminRouter.post(
+  "/invoices/:id/payments",
+  validateParams(InvoiceIdParamSchema),
+  validate(PaymentCreateSchema),
+  send((req) => invoiceService.recordPayment(req.params.id, req.body, actorId(req)), 201),
+);
+adminRouter.post(
+  "/invoices/:id/cancel",
+  validateParams(InvoiceIdParamSchema),
+  send((req) => invoiceService.cancel(req.params.id)),
+);
 
 // ─── Packages ────────────────────────────────────────────────────────────────
 
@@ -226,15 +260,25 @@ adminRouter.put(
 
 // ─── Placeholders ───────────────────────────────────────────────────────────
 
-/** Phase 4: review queue across all customers. */
-adminRouter.get("/documents", (_req, res) => {
-  res.json({ success: true, data: [], message: "not implemented" });
-});
+adminRouter.get(
+  "/documents",
+  validateQuery(AdminDocumentListQuerySchema),
+  send((req) => documentService.listAdminDocuments(req.query as unknown as ReturnType<typeof AdminDocumentListQuerySchema.parse>)),
+);
 
-/** Phase 4: admin override of a document decision. */
-adminRouter.patch("/documents/:id/status", (_req, res) => {
-  res.json({ success: true, data: {}, message: "not implemented" });
-});
+adminRouter.patch(
+  "/documents/:id/status",
+  validateParams(DocumentIdParamSchema),
+  validate(AdminUpdateDocumentStatusSchema),
+  send((req) =>
+    documentService.updateDocumentStatus(
+      { id: actorId(req), role: req.user!.role },
+      req.params.id,
+      req.body,
+      true,
+    ),
+  ),
+);
 
 /** Phase 5: subscription oversight. */
 adminRouter.get("/subscriptions", (_req, res) => {

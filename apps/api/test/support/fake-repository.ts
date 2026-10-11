@@ -120,12 +120,39 @@ export interface FakeFindOptions<T extends Row> {
   order?: Record<string, "ASC" | "DESC" | undefined>;
   skip?: number;
   take?: number;
+  /** Only relations registered with `defineRelation` are resolved; others are ignored. */
+  relations?: Record<string, unknown>;
 }
+
+type RelationResolver = (row: Row) => Row | undefined;
 
 export class FakeRepository<T extends Row> {
   private readonly rows: T[] = [];
+  private readonly relationResolvers = new Map<string, RelationResolver>();
 
   constructor(private readonly label: string) {}
+
+  /**
+   * Lets `find`/`findOne` honour `relations: { [name]: true }` the way TypeORM does,
+   * by looking the related row up in another fake table. A row that already carries
+   * the relation (seeded inline) is left as it is.
+   */
+  defineRelation(name: string, resolver: RelationResolver): void {
+    this.relationResolvers.set(name, resolver);
+  }
+
+  private withRelations(row: T, relations?: Record<string, unknown>): T {
+    if (!relations) return row;
+    const result: Row = { ...row };
+    for (const [name, wanted] of Object.entries(relations)) {
+      const resolver = this.relationResolvers.get(name);
+      if (wanted && resolver && result[name] === undefined) {
+        const related = resolver(result);
+        if (related) result[name] = { ...related };
+      }
+    }
+    return result as T;
+  }
 
   /** Direct insert for test setup; bypasses nothing, it is what `save` does. */
   seed(row: T): T {
@@ -190,7 +217,7 @@ export class FakeRepository<T extends Row> {
       options.order,
     );
 
-    return matches.length > 0 ? project(matches[0], options.select) : null;
+    return matches.length > 0 ? project(this.withRelations(matches[0], options.relations), options.select) : null;
   }
 
   async find(options: FakeFindOptions<T> = {}): Promise<T[]> {
@@ -202,7 +229,7 @@ export class FakeRepository<T extends Row> {
     const start = options.skip ?? 0;
     const end = options.take === undefined ? undefined : start + options.take;
 
-    return matches.slice(start, end).map((row) => project(row, options.select));
+    return matches.slice(start, end).map((row) => project(this.withRelations(row, options.relations), options.select));
   }
 
   async findAndCount(options: FakeFindOptions<T> = {}): Promise<[T[], number]> {

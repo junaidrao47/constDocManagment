@@ -373,3 +373,16 @@ Status-change notifications are enqueued to the BullMQ `email` queue through `ap
 - Added `bullmq` to the API, templates `quotation-accepted`, `quotation-rejected`, `payment-recorded`.
 - Added `GET /api/admin/documents` (paginated) and `PATCH /api/admin/documents/:id/status` (admin override, note required).
 
+
+## 2026-10-11
+
+### Decision
+API responses never embed a raw `UserEntity`. Services pass any loaded user relation through `toPublicUser()` (`apps/api/src/utils/serialize-user.ts`), exposing only `id, email, name, phone, role`.
+
+### Why
+- Quotation endpoints loaded `relations: { customer: true }` and returned the entity, leaking every customer's `passwordHash` and `tokensValidFrom`. Agents can list all quotations, so any agent could collect every customer's bcrypt hash.
+- An audit of every user-loading path found quotations to be the only leak: auth, users, admin users and customer profile already use explicit serializers; document and payment user relations are declared but never loaded.
+
+### Result
+- Sanitized in `quotation.service.ts` `list()`/`get()`, which back all 14 JSON quotation endpoints (admin, agent, customer, `/api/quotations/:id`).
+- `test/no-user-secrets.test.ts` covers each endpoint; the fake DB now hydrates `QuotationEntity.customer` from the users table so the tests fail without the fix.

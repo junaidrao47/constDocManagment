@@ -2,6 +2,7 @@ import { AppDataSource } from "../../config/database";
 import { QuotationStatusHistoryEntity } from "../../entities/quotation-status-history.entity";
 import { QuotationItemEntity } from "../../entities/quotation-item.entity";
 import { HttpError } from "../../utils/http-error";
+import { toPublicUser } from "../../utils/serialize-user";
 import { UserEntity, UserRole } from "../users/user.entity";
 import { publicService, getSettingValue } from "../public/public.service";
 import { notify, type NotificationType } from "../notifications/notify.service";
@@ -54,6 +55,18 @@ function normalizeItem(item: QuotationItemEntity): QuotationItemEntity {
 function assertAccess(quotation: QuotationEntity, actor: Actor, mutating = false) {
   if (actor.role === UserRole.Customer && quotation.customerId !== actor.id) throw new HttpError(404, "Quotation not found");
   if (mutating && actor.role === UserRole.Agent) throw new HttpError(403, "Only managers or admins may change quotation status");
+}
+
+/**
+ * Replaces the loaded customer with its public fields. Runs last, after any save,
+ * because the loaded relation carries passwordHash and tokensValidFrom.
+ */
+function withPublicCustomer(quotation: QuotationEntity): QuotationEntity {
+  if (quotation.customer) {
+    // Narrower than UserEntity by design; only the public fields may leave the service.
+    quotation.customer = toPublicUser(quotation.customer) as UserEntity;
+  }
+  return quotation;
 }
 
 async function expireIfNeeded(quotation: QuotationEntity) {
@@ -221,7 +234,7 @@ export const quotationService = {
         if (row.items) {
           row.items = row.items.map(normalizeItem);
         }
-        return expireIfNeeded(row);
+        return withPublicCustomer(await expireIfNeeded(row));
       }),
     );
   },
@@ -233,7 +246,7 @@ export const quotationService = {
     if (quotation.items) {
       quotation.items = quotation.items.map(normalizeItem);
     }
-    return expireIfNeeded(quotation);
+    return withPublicCustomer(await expireIfNeeded(quotation));
   },
 
   async transition(id: string, nextStatus: string, actor: Actor, note?: string) {

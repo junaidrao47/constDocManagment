@@ -33,15 +33,23 @@ async function seed() {
   await upsertUser("manager@test.com", "Phase 0 Manager", UserRole.Manager, PHASE0_PASSWORDS.manager);
   await upsertUser("agent@test.com", "Phase 0 Agent", UserRole.Agent, PHASE0_PASSWORDS.agent);
   const customer = await upsertUser("customer@test.com", "Phase 0 Customer", UserRole.Customer, PHASE0_PASSWORDS.customer);
+  // Second customer and agent support Phase E agent-customer assignment scoping.
+  await upsertUser("customer2@test.com", "Demo Customer Two", UserRole.Customer, PHASE0_PASSWORDS.customer);
+  await upsertUser("agent2@test.com", "Demo Agent Two", UserRole.Agent, PHASE0_PASSWORDS.agent);
 
   const serviceRepository = AppDataSource.getRepository(ServiceEntity);
   const documentService = await serviceRepository.save(serviceRepository.create({ name: "Construction Compliance Review", description: "Review and organize project compliance documents.", basePrice: "25000", isActive: true }));
   const safetyService = await serviceRepository.findOne({ where: { name: "Site Safety Documentation" } }) ?? await serviceRepository.save(serviceRepository.create({ name: "Site Safety Documentation", description: "Prepare and review site safety records.", basePrice: "18000", isActive: true }));
 
   const industryRepository = AppDataSource.getRepository(IndustryEntity);
-  const industry = await industryRepository.findOne({ where: { name: "Construction" } }) ?? await industryRepository.save(industryRepository.create({ name: "Construction", description: "General construction and contracting." }));
+  const industry = await industryRepository.findOne({ where: { name: "Construction" } }) ?? await industryRepository.save(industryRepository.create({ name: "Construction", description: "General construction and contracting.", priceWeight: "1" }));
+  await industryRepository.findOne({ where: { name: "Manufacturing" } }) ?? await industryRepository.save(industryRepository.create({ name: "Manufacturing", description: "Factory and production facilities.", priceWeight: "1.2" }));
+  await industryRepository.findOne({ where: { name: "Logistics" } }) ?? await industryRepository.save(industryRepository.create({ name: "Logistics", description: "Warehousing and distribution.", priceWeight: "1.1" }));
   const locationRepository = AppDataSource.getRepository(LocationEntity);
-  const location = await locationRepository.findOne({ where: { state: "Punjab", city: "Lahore" } }) ?? await locationRepository.save(locationRepository.create({ state: "Punjab", city: "Lahore", multiplier: "1.00", cityFee: "2500", isActive: true }));
+  // Mexican demo locations. `location` (CDMX) backs the sample quotation seeded below.
+  const location = await locationRepository.findOne({ where: { state: "Ciudad de México", city: "Ciudad de México" } }) ?? await locationRepository.save(locationRepository.create({ state: "Ciudad de México", city: "Ciudad de México", multiplier: "1.15", cityFee: "3500", isActive: true }));
+  await locationRepository.findOne({ where: { state: "Nuevo León", city: "Monterrey" } }) ?? await locationRepository.save(locationRepository.create({ state: "Nuevo León", city: "Monterrey", multiplier: "1.10", cityFee: "3000", isActive: true }));
+  await locationRepository.findOne({ where: { state: "Jalisco", city: "Guadalajara" } }) ?? await locationRepository.save(locationRepository.create({ state: "Jalisco", city: "Guadalajara", multiplier: "1.00", cityFee: "2500", isActive: true }));
   const workerRepository = AppDataSource.getRepository(WorkerRangeEntity);
   for (const range of [{ minWorkers: 1, maxWorkers: 10, basePrice: "15000" }, { minWorkers: 11, maxWorkers: 50, basePrice: "30000" }, { minWorkers: 51, maxWorkers: null, basePrice: "60000" }]) {
     const existing = range.maxWorkers === null

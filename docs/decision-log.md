@@ -386,3 +386,19 @@ API responses never embed a raw `UserEntity`. Services pass any loaded user rela
 ### Result
 - Sanitized in `quotation.service.ts` `list()`/`get()`, which back all 14 JSON quotation endpoints (admin, agent, customer, `/api/quotations/:id`).
 - `test/no-user-secrets.test.ts` covers each endpoint; the fake DB now hydrates `QuotationEntity.customer` from the users table so the tests fail without the fix.
+
+
+## 2026-10-11
+
+### Decision
+The Phase-0 demo seed (`apps/api/src/scripts/seed-phase0.ts`) uses Mexican locations and industries and adds a second customer and agent.
+
+### Why
+- The client is Mexican (currency MXN); the earlier Punjab/Lahore location did not fit the demo.
+- Phase E agent–customer assignment scoping needs more than one customer and agent to demonstrate.
+
+### Result
+- Locations: `Ciudad de México` (×1.15, fee 3500), `Nuevo León / Monterrey` (×1.10, 3000), `Jalisco / Guadalajara` (×1.00, 2500). CDMX backs the sample quotation.
+- Industries carry `priceWeight`: Construction 1, Manufacturing 1.2, Logistics 1.1.
+- Added `customer2@test.com` and `agent2@test.com` (same demo passwords as the Phase-0 users).
+- The seed stays additive (find-or-create), so existing databases keep their old rows; use `npm run db:reset` for a clean Mexican-only dataset.

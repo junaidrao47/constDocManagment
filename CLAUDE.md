@@ -6,7 +6,7 @@
 - Assert queued emails with `queuedEmails` from `test/support/email-queue.fake.ts`.
 - Worker typecheck: `cd apps/worker && npx tsc --noEmit -p .`
 - Full stack: `docker compose up --build` (repo root), then `GET http://localhost:3001/health/ready`.
-- Demo data: `npm run db:seed` (logins in `src/scripts/seed-phase0.ts`).
+- Demo data: `npm run db:seed` (logins in `src/scripts/seed-phase0.ts`). Seed is additive (find-or-create); run `npm run db:reset` first for a clean Mexican-only dataset. Seeded demo users: admin/manager/agent/customer plus `customer2@test.com` and `agent2@test.com`. Locations are CDMX / Monterrey / Guadalajara.
 
 ## Gotchas
 - Currency is **MXN** (client is Mexican). Never change it.

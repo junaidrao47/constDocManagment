@@ -14,3 +14,4 @@
 - Status-change emails go through `modules/notifications/notify.service.ts` → BullMQ `email` queue → worker templates in `apps/worker/src/templates/`.
 - Email templates link to `/portal/...` but the customer portal routes are `/dashboard/...` (open bug, fix planned in E4).
 - `GET /api/admin/subscriptions` and `GET /api/admin/analytics` are stubs. Don't build UI on them.
+- Tests run against an in-memory fake DB, so entity/schema drift is invisible to them. After adding an entity column, add a migration and verify against real Postgres (`docker compose exec api npm run db:migrate`). Example: the `documents.approved_*` columns existed on the entity with no migration until `1820000000000-DocumentApprovedUpload`.

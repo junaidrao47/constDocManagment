@@ -402,3 +402,17 @@ The Phase-0 demo seed (`apps/api/src/scripts/seed-phase0.ts`) uses Mexican locat
 - Industries carry `priceWeight`: Construction 1, Manufacturing 1.2, Logistics 1.1.
 - Added `customer2@test.com` and `agent2@test.com` (same demo passwords as the Phase-0 users).
 - The seed stays additive (find-or-create), so existing databases keep their old rows; use `npm run db:reset` for a clean Mexican-only dataset.
+
+
+## 2026-10-11
+
+### Decision
+Added migration `1820000000000-DocumentApprovedUpload` to create the `documents.approved_*` columns.
+
+### Why
+- `DocumentEntity` has declared `approvedFileName`, `approvedS3Key`, `approvedUploadedBy`, `approvedUploadedAt` since the approved-upload feature was added, but no migration ever created those columns. Every query selecting a document (customer dashboard, documents page, admin/staff review queues, approved downloads) failed at runtime with `column DocumentEntity.approved_file_name does not exist`.
+- The gap was invisible to the test suite, which runs against an in-memory fake DB, not the migrated Postgres schema.
+
+### Result
+- The migration adds the four columns (nullable) plus `FK_documents_approved_uploaded_by` → `users(id) ON DELETE SET NULL`, matching the entity.
+- `down()` drops the constraint then the columns. Applied with `npm run db:migrate`; the customer dashboard and document endpoints now return 200.

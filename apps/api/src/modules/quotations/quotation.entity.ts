@@ -55,6 +55,11 @@ export class QuotationEntity extends AppBaseEntity {
 	@Column({ name: "expires_at", type: "timestamptz", nullable: true })
 	expiresAt?: Date | null;
 
-	@OneToMany(() => QuotationItemEntity, (item) => item.quotation)
+	// cascade: ["insert"] is load-bearing. Both quotationService.create() and
+	// staffCreate() build their line items inline and rely on save() to persist
+	// them; without it TypeORM silently dropped every item and quotation_items
+	// stayed empty in Postgres. The Jest fake repository keeps the object graph in
+	// memory, so the suite never saw it.
+	@OneToMany(() => QuotationItemEntity, (item) => item.quotation, { cascade: ["insert"] })
 	items?: QuotationItemEntity[];
 }

@@ -416,3 +416,21 @@ Added migration `1820000000000-DocumentApprovedUpload` to create the `documents.
 ### Result
 - The migration adds the four columns (nullable) plus `FK_documents_approved_uploaded_by` → `users(id) ON DELETE SET NULL`, matching the entity.
 - `down()` drops the constraint then the columns. Applied with `npm run db:migrate`; the customer dashboard and document endpoints now return 200.
+
+## 2026-10-12
+
+### Decision
+Entity↔migration drift is treated as a recurring defect class, not a series of one-off bugs. Every schema or persistence change is now verified against real Postgres with `npm run smoke` (`apps/api/src/scripts/smoke.ts`), which drives the whole milestone story over HTTP against a running API.
+
+### Why
+- The Jest suite maps the data source to an in-memory fake (`apps/api/jest.config.js` `moduleNameMapper`), so it cannot see a column that exists on an entity but not in Postgres, a column that exists in Postgres but on no entity, or a relation that is never persisted. All 120 tests passed while three such defects were live.
+- `1820000000000-DocumentApprovedUpload` was the first instance. Three more were found on the live database on 2026-10-12, each of which broke a step of the paid milestone story:
+  - `payments.status` was `varchar(50) NOT NULL` with no default (`1700000000000-InitialSchema.ts:279`), while `PaymentEntity` has no `status` property and nothing writes one. **Every payment insert failed.** `1810000000000-InvoicePayments` could not fix it because its `CREATE TABLE IF NOT EXISTS "payments"` is a no-op on an already-migrated database.
+  - `quotation_items.service_id` was `uuid NOT NULL` (`InitialSchema.ts:164`) while `QuotationItemEntity` declares `nullable: true`. `quotationService.staffCreate` inserts `serviceId: null` for its `worker_base`, `gov_fee` and `discount` lines, so **every staff-created quotation failed.**
+  - `QuotationEntity.items` declared `@OneToMany` with **no `cascade`**, while both `create()` and `staffCreate()` build their line items inline and rely on `save()`. TypeORM silently discarded them: `quotation_items` held **zero rows** across every quotation ever created, so no quotation was itemised in Postgres even though the fake repository returned a full object graph to the tests.
+- `payments.gateway_ref` (`InitialSchema.ts:277`) is on no entity and was already backfilled into `reference`; it is dropped rather than left as an untracked column. Named gateway reference columns arrive with the payment-gateway work.
+
+### Result
+- Migration `1830000000000-FixSchemaDrift`: drops `NOT NULL` on `quotation_items.service_id`, drops `payments.status` and `payments.gateway_ref`, and gives `subscriptions.status` a default of `active`. Its `down()` backfills before restoring `NOT NULL` and fails loudly rather than deleting rows.
+- `QuotationEntity.items` is now `{ cascade: ["insert"] }`. Line items persist; a staff quotation stores its `worker_base`, city-fee and extra-line rows with a null `service_id`.
+- `npm run smoke` is the authoritative gate from now on: a green `npm test` is not evidence that a persistence change works. Steps this build has not delivered yet print `SKIP` with the owning phase, so the script is also the milestone scoreboard.

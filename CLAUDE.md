@@ -2,6 +2,9 @@
 
 ## Commands (run from `apps/api` unless noted)
 - Checks: `npm run typecheck && npm run typecheck:test && npm test` (there is no lint script)
+- **`npm run smoke` is the real gate.** It drives the whole milestone story over HTTP against a running API and a real Postgres. A green `npm test` is NOT evidence that a persistence change works — see Gotchas. Needs the stack up and `npm run db:seed` done. Override the target with `SMOKE_API_URL=https://host/api`. Steps not built yet print `SKIP <phase>`, so it doubles as the delivery scoreboard.
+  - `compose.yml` mounts only `apps/api/src`, not `package.json`, so inside the container run `npx ts-node src/scripts/smoke.ts` rather than `npm run smoke`.
+  - Entity *metadata* is built when the DataSource boots, and `ts-node-dev --respawn` does not rebuild it. After changing a decorator (a relation, a cascade, a column), `docker compose restart api` or the change silently does nothing.
 - Infra is faked in tests via `moduleNameMapper` in `apps/api/jest.config.js` (database, redis, email, email-queue). Patterns match the import string, not the resolved path. New infra modules need a fake there, or Jest won't exit.
 - Assert queued emails with `queuedEmails` from `test/support/email-queue.fake.ts`.
 - Worker typecheck: `cd apps/worker && npx tsc --noEmit -p .`
@@ -14,4 +17,6 @@
 - Status-change emails go through `modules/notifications/notify.service.ts` → BullMQ `email` queue → worker templates in `apps/worker/src/templates/`.
 - Email templates link to `/portal/...` but the customer portal routes are `/dashboard/...` (open bug, fix planned in E4).
 - `GET /api/admin/subscriptions` and `GET /api/admin/analytics` are stubs. Don't build UI on them.
-- Tests run against an in-memory fake DB, so entity/schema drift is invisible to them. After adding an entity column, add a migration and verify against real Postgres (`docker compose exec api npm run db:migrate`). Example: the `documents.approved_*` columns existed on the entity with no migration until `1820000000000-DocumentApprovedUpload`.
+- Tests run against an in-memory fake DB, so entity/schema drift is invisible to them. **This has now produced four production bugs; treat it as the top risk in this repo.** All 120 tests passed while payments could not be inserted at all, staff quotations could not be inserted at all, and `quotation_items` was empty for every quotation in existence. Verify every persistence change with `npm run smoke`, never with `npm test` alone.
+- Three shapes this drift takes, all seen here: (1) a column on the entity with no migration (`documents.approved_*`); (2) a column in Postgres that is on no entity and `NOT NULL` with no default, so inserts fail (`payments.status`); (3) a relation the code populates inline but whose `@OneToMany` has no `cascade`, so TypeORM drops it without error (`QuotationEntity.items`). The fake repository hides all three.
+- `CREATE TABLE IF NOT EXISTS` in a later migration is a **no-op** on an already-migrated database, so it cannot be used to correct a table InitialSchema already created. Use explicit `ALTER`. After adding an entity column, add a migration and verify against real Postgres (`docker compose exec api npm run db:migrate`). Example: the `documents.approved_*` columns existed on the entity with no migration until `1820000000000-DocumentApprovedUpload`.

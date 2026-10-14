@@ -11,6 +11,7 @@ import { PackageEntity } from "../../src/modules/packages/package.entity";
 import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
 import { QuotationItemEntity } from "../../src/entities/quotation-item.entity";
 import { AppSettingEntity } from "../../src/entities/app-setting.entity";
+import { AgentCustomerAssignmentEntity } from "../../src/entities/agent-customer-assignment.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -120,6 +121,7 @@ export const fakeDb = {
   quotations: () => AppDataSource.getRepository(QuotationEntity),
   quotationItems: () => AppDataSource.getRepository(QuotationItemEntity),
   appSettings: () => AppDataSource.getRepository(AppSettingEntity),
+  assignments: () => AppDataSource.getRepository(AgentCustomerAssignmentEntity),
 };
 
 export function resetFakeDatabase(): void {

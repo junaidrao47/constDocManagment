@@ -307,6 +307,34 @@ async function main(): Promise<void> {
   }
 
   // -- story 7: upload and review a document --------------------------------
+  // The agent must be assigned the customer first. Since document scoping landed,
+  // an agent with no assignment is refused every read and every status change, so
+  // this step is a prerequisite of the review story rather than a separate feature.
+  // It also exercises POST /api/manager/assignments end to end. assign() is
+  // idempotent, so re-running smoke against the same database is safe.
+  const reviewCustomerId = data<{ profile: { id: string } }>(
+    await need("customer resolves own id", call("GET", "/customers/me", { token: customerToken })),
+  ).profile.id;
+  const reviewAgentId = data<{ items: Array<{ id: string }> }>(
+    await need(
+      "reviewing agent lookup",
+      call("GET", `/admin/users?role=agent&search=${encodeURIComponent(AGENT.email)}&pageSize=1`, {
+        token: adminToken,
+      }),
+    ),
+  ).items[0].id;
+
+  await need(
+    "assign the customer to the reviewing agent",
+    // adminToken, not a manager login: /api/manager admits manager and admin, and
+    // smoke already holds an admin token.
+    call("POST", "/manager/assignments", {
+      token: adminToken,
+      body: { agentId: reviewAgentId, customerId: reviewCustomerId },
+    }),
+  );
+  pass("story 7 - agent is assigned the customer");
+
   const uploadTarget = data<{ document: { id: string }; uploadMode: string }>(
     await need(
       "document upload target",

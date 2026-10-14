@@ -2,7 +2,7 @@ import crypto from "crypto";
 import request from "supertest";
 import { QuotationStatus } from "../src/modules/quotations/quotation-status";
 import { UserRole } from "../src/modules/users/user.entity";
-import { bearer, fakeDb, mintToken, resetTestState, seedUser, testApp, type SeededUser } from "./support/harness";
+import { bearer, fakeDb, mintToken, resetTestState, seedAssignment, seedUser, testApp, type SeededUser } from "./support/harness";
 
 /**
  * No response may carry a user's password hash or session-invalidation timestamp.
@@ -51,10 +51,15 @@ async function seedContext(status: QuotationStatus): Promise<Context> {
     items: [],
   });
 
+  const agent = await seedUser({ role: UserRole.Agent });
+  // The agent quotation list is scoped to assigned customers, so this fixture has
+  // to make the agent responsible for the customer it then reads back.
+  seedAssignment(agent.id, customer.id);
+
   return {
     admin: await seedUser({ role: UserRole.Admin }),
     manager: await seedUser({ role: UserRole.Manager }),
-    agent: await seedUser({ role: UserRole.Agent }),
+    agent,
     customer,
     pricing,
     quotationId,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isQuotationStatus } from "./quotation-status";
 
 export const QuotationSchema = z.object({
 	workerCount: z.number().int().min(1).max(100000),
@@ -34,3 +35,29 @@ export const StaffQuotationCreateSchema = z.object({
 });
 
 export type StaffQuotationCreateInput = z.infer<typeof StaffQuotationCreateSchema>;
+
+/**
+ * Query for the three quotation list endpoints.
+ *
+ * `page`, `pageSize` and `limit` are deliberately **optional with no defaults**.
+ * `validateQuery` replaces req.query with the parsed result, so a default here
+ * would make every request indistinguishable from an explicitly paginated one —
+ * and three live frontend pages consume these endpoints as a bare array. The
+ * service applies the defaults once it has decided the caller wants a page.
+ *
+ * `limit` is an accepted alias for `pageSize`; when both are given `pageSize` wins.
+ */
+export const QuotationListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  sort: z
+    .enum(["createdAt", "-createdAt", "totalPrice", "-totalPrice", "status", "-status"])
+    .default("-createdAt"),
+  status: z
+    .string()
+    .refine(isQuotationStatus, "must be a valid quotation status")
+    .optional(),
+});
+
+export type QuotationListQuery = z.infer<typeof QuotationListQuerySchema>;

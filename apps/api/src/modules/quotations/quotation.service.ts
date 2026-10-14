@@ -9,7 +9,7 @@ import { notify, type NotificationType } from "../notifications/notify.service";
 import { PricingInput } from "./pricing.engine";
 import { QuotationEntity } from "./quotation.entity";
 import { assertQuotationTransition, isQuotationStatus, QuotationStatus } from "./quotation-status";
-import { StaffQuotationCreateInput } from "./quotation.schema";
+import { QuotationListQuery, StaffQuotationCreateInput } from "./quotation.schema";
 
 type Actor = { id: string; role: UserRole };
 const quotations = () => AppDataSource.getRepository(QuotationEntity);
@@ -77,6 +77,36 @@ async function expireIfNeeded(quotation: QuotationEntity) {
     await history().save(history().create({ quotationId: quotation.id, fromStatus: previous, toStatus: QuotationStatus.Expired, note: "Automatically expired" }));
   }
   return quotation;
+}
+
+/**
+ * Sort keys mapped to TypeORM order objects.
+ *
+ * An explicit allow-list, never a key interpolated from the query string: the
+ * value reaches a repository option object, so an unmapped key would be a
+ * caller-controlled column reference. `QuotationListQuerySchema` rejects anything
+ * not listed here with a 400 before it gets this far; this table is the second
+ * line of that defence, not the first.
+ */
+const SORT_ORDERS = {
+  createdAt: { createdAt: "ASC" },
+  "-createdAt": { createdAt: "DESC" },
+  totalPrice: { totalPrice: "ASC" },
+  "-totalPrice": { totalPrice: "DESC" },
+  status: { status: "ASC" },
+  "-status": { status: "DESC" },
+} as const satisfies Record<NonNullable<QuotationListQuery["sort"]>, Record<string, "ASC" | "DESC">>;
+
+const LIST_RELATIONS = { items: { service: true }, customer: true, industry: true, location: true } as const;
+
+const DEFAULT_PAGE_SIZE = 25;
+
+/** Normalises line items, applies lazy expiry, and strips the customer to public fields. */
+async function decorateRow(row: QuotationEntity): Promise<QuotationEntity> {
+  if (row.items) {
+    row.items = row.items.map(normalizeItem);
+  }
+  return withPublicCustomer(await expireIfNeeded(row));
 }
 
 export const quotationService = {
@@ -226,27 +256,55 @@ export const quotationService = {
     return this.get(saved.id, actor);
   },
 
-  async list(actor: Actor) {
-    const where = actor.role === UserRole.Customer ? { customerId: actor.id } : {};
-    const rows = await quotations().find({ where, relations: { items: { service: true }, customer: true, industry: true, location: true }, order: { createdAt: "DESC" } });
-    return Promise.all(
-      rows.map(async (row) => {
-        if (row.items) {
-          row.items = row.items.map(normalizeItem);
-        }
-        return withPublicCustomer(await expireIfNeeded(row));
-      }),
-    );
+  /**
+   * Quotations visible to `actor`, newest first.
+   *
+   * Pagination is **opt-in**. With no `page`/`pageSize`/`limit` the return value is
+   * the bare array it has always been, because the admin, staff and customer
+   * quotation pages all consume it as `Quotation[]`. Pass any one of them and the
+   * result is wrapped as `{ data, pagination }`, matching the invoice and document
+   * list endpoints.
+   *
+   * The customer ownership filter applies on both paths.
+   */
+  async list(actor: Actor, query?: QuotationListQuery) {
+    const where = {
+      ...(actor.role === UserRole.Customer ? { customerId: actor.id } : {}),
+      ...(query?.status ? { status: query.status } : {}),
+    };
+    const order = SORT_ORDERS[query?.sort ?? "-createdAt"];
+    const paginating =
+      query !== undefined &&
+      (query.page !== undefined || query.pageSize !== undefined || query.limit !== undefined);
+
+    if (!paginating) {
+      const rows = await quotations().find({ where, relations: LIST_RELATIONS, order });
+      return Promise.all(rows.map(decorateRow));
+    }
+
+    const page = query.page ?? 1;
+    // pageSize wins over limit: limit exists only so an API client that reached for
+    // the commoner name is not silently given 25 rows.
+    const pageSize = query.pageSize ?? query.limit ?? DEFAULT_PAGE_SIZE;
+    const [rows, total] = await quotations().findAndCount({
+      where,
+      relations: LIST_RELATIONS,
+      order,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    return {
+      data: await Promise.all(rows.map(decorateRow)),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    };
   },
 
   async get(id: string, actor: Actor) {
     const quotation = await quotations().findOne({ where: { id }, relations: { items: { service: true }, customer: true, industry: true, location: true } });
     if (!quotation) throw new HttpError(404, "Quotation not found");
     assertAccess(quotation, actor);
-    if (quotation.items) {
-      quotation.items = quotation.items.map(normalizeItem);
-    }
-    return withPublicCustomer(await expireIfNeeded(quotation));
+    return decorateRow(quotation);
   },
 
   async transition(id: string, nextStatus: string, actor: Actor, note?: string) {

@@ -8,6 +8,7 @@ import { redisClient } from "../../config/redis";
 import { HttpError } from "../../utils/http-error";
 import { logger } from "../../utils/logger";
 import { sendEmail } from "../../utils/email";
+import { resolveWebUrl } from "../../utils/web-url";
 import { RefreshTokenEntity } from "../../entities/refresh-token.entity";
 import { UserEntity, UserRole } from "../users/user.entity";
 import {
@@ -46,24 +47,6 @@ export interface ForgotPasswordInput {
 export interface ResetPasswordInput {
   token: string;
   newPassword: string;
-}
-
-/**
- * Where the password-reset link points.
- *
- * WEB_URL when set, otherwise the first configured CORS origin, since that is the
- * browser app in every deployment we control. Never derived from the request's
- * Host or Origin header: an attacker-supplied header would put an attacker-chosen
- * domain into an email the victim has every reason to trust.
- */
-function resolveWebUrl(): string | null {
-  if (env.webUrl) {
-    return env.webUrl.replace(/\/+$/, "");
-  }
-
-  const firstOrigin = env.corsOrigin?.split(",")[0]?.trim();
-
-  return firstOrigin && firstOrigin !== "*" ? firstOrigin.replace(/\/+$/, "") : null;
 }
 
 // Sourced from the validated env module, which guarantees both signing keys are

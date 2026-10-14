@@ -11,6 +11,7 @@ import {
 } from "../../utils/s3";
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
 import { notify } from "../notifications/notify.service";
+import { webUrlFor } from "../../utils/web-url";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import { ServiceEntity } from "../../entities/service.entity";
@@ -404,7 +405,7 @@ export const documentService = {
     await notify({
       userId: document.customerId,
       type,
-      data: { documentName: document.fileName, status: input.toStatus, note: input.note ?? "", documentUrl: `${process.env.WEB_URL ?? ""}/portal/documents` },
+      data: { documentName: document.fileName, status: input.toStatus, note: input.note ?? "", documentUrl: webUrlFor("/dashboard/documents") },
     });
 
     return normalizeDocument(savedDocument);

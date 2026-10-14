@@ -84,6 +84,18 @@ const EnvSchema = z
         message: "is required in production so outgoing email is not silently dropped",
       });
     }
+
+    // Every link in an outgoing email is built from this. Unset, the dispatcher
+    // and the password-reset flow emit bare relative paths such as
+    // "/dashboard/documents", which no mail client can resolve — so the email
+    // sends successfully and is still useless to the recipient.
+    if (!value.webUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["webUrl"],
+        message: "is required in production so links inside emails are absolute and clickable",
+      });
+    }
   });
 
 export type Env = z.infer<typeof EnvSchema>;

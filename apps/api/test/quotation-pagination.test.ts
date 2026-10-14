@@ -1,7 +1,7 @@
 import request from "supertest";
 import { QuotationStatus } from "../src/modules/quotations/quotation-status";
 import { UserRole } from "../src/modules/users/user.entity";
-import { bearer, fakeDb, mintToken, resetTestState, seedUser, testApp } from "./support/harness";
+import { bearer, fakeDb, mintToken, resetTestState, seedAssignment, seedUser, testApp } from "./support/harness";
 
 beforeEach(() => resetTestState());
 
@@ -41,6 +41,9 @@ describe("quotation lists stay a bare array unless pagination is requested", () 
     const customer = await seedUser({ role: UserRole.Customer, email: `cust.bare.${label}@test.com` });
     const caller =
       role === UserRole.Customer ? customer : await seedUser({ role, email: `caller.bare.${label}@test.com` });
+    // An agent only lists assigned customers; manager and admin are unrestricted,
+    // so seeding it for them is harmless.
+    seedAssignment(caller.id, customer.id);
     seedQuotation(customer.id);
 
     const response = await request(testApp()).get(path).set("Authorization", bearer(mintToken(caller)));

@@ -1,7 +1,7 @@
 import request from "supertest";
 import { DocumentStatus } from "../src/modules/documents/document-status";
 import { UserRole } from "../src/modules/users/user.entity";
-import { bearer, fakeDb, mintToken, resetTestState, seedDocument, seedUser, testApp } from "./support/harness";
+import { bearer, fakeDb, mintToken, resetTestState, seedAssignment, seedDocument, seedUser, testApp } from "./support/harness";
 
 beforeEach(() => resetTestState());
 
@@ -75,6 +75,9 @@ describe("GET /api/documents/:id/history", () => {
     const staff = await seedUser({ role, email: `staff.${label}@test.com` });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
     seedHistory(document.id, DocumentStatus.Pending);
+    // An agent needs the assignment; manager and admin are unrestricted, and
+    // seeding it for them changes nothing.
+    seedAssignment(staff.id, customer.id);
 
     const response = await request(testApp())
       .get(`/api/documents/${document.id}/history`)

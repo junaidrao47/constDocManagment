@@ -548,3 +548,68 @@ Four scoping decisions taken with the client-side stakeholder during the audit:
   `Quotation[]` and would break unattended.
 - Tasks 02 and 05 declare themselves **incomplete without `npm run smoke`**, per the 2026-10-12
   entry: the Jest fake DB cannot see entity/migration drift.
+
+
+## 2026-10-14
+
+### Decision
+Agents are scoped to their assigned customers for documents and quotations. Managers and admins are
+not. The gate is one helper plus one guard:
+
+- `assignmentService.customerScopeFor(actor)` returns the customer-id filter a list must apply, or
+  `null` for an unrestricted actor. Both `/api/agent/documents` and `/api/agent/quotations` go
+  through it, so "what an agent may list" is decided once.
+- `document.service.ts` `assertCanReadDocument` is the single per-record guard, now `async`, and
+  `updateDocumentStatus` and `assertCanUploadApprovedVersion` both call it.
+
+`/api/manager` is mounted with `GET`/`POST /assignments` and `DELETE /assignments/:id`, for
+**manager and admin**.
+
+### Why
+- `assertCanReadDocument` returned early for every staff role behind a `TODO(phase-4)`, so any agent
+  could read, download and approve every customer's documents. `docs/api-surface.md` acknowledged it
+  in prose; the matrix claimed `asg`.
+- **The write path had no ownership check at all.** `updateDocumentStatus` gated on
+  `canMutateDocumentStatus(actor.role)` and never consulted the read guard, so scoping reads alone
+  would have left an agent able to approve a document they are forbidden to open — the mirror image
+  of the original defect. Authorisation now runs before the `fromStatus` and transition checks, so an
+  unassigned agent gets 403 rather than 409.
+- **"Manager sees their team" could not be implemented from the data.** `users` carries only name,
+  phone, email, passwordHash, role, isActive and tokensValidFrom — no `manager_id`, no teams table,
+  no branch or region. The only manager-adjacent column in the schema is
+  `agent_customer_assignments.assigned_by`, and keying a team off it fails openly: it is nullable and
+  `ON DELETE SET NULL`, so assignments made by an admin, or whose creating manager was deleted, would
+  belong to no manager and become invisible to all of them. Inventing a team shape here would have
+  pre-empted the unanswered client question in `docs/client-decisions.md` ("Can agents see only
+  assigned customers, or all customers in a branch/team?"), so managers stay organisation-wide and
+  the matrix was corrected to say so.
+- A customer assigned to nobody is invisible to every agent. The alternative — treating an
+  assignment as something that only ever *narrows* — would have left the exposure open for every
+  customer nobody has assigned yet, which today is all of them.
+
+### Result
+- `apps/api/src/modules/manager/manager.router.ts` and
+  `apps/api/src/modules/assignments/assignment.schema.ts` are new. `assignmentService` gains
+  `removeById`, `list` and `customerScopeFor`. `assignedBy` is read from the token, never the body.
+- An agent with no assignments gets `[]` from both lists, not everything. The helper distinguishes
+  `[]` from `null` for exactly this reason, and callers short-circuit before building an `In([])`,
+  which Postgres rejects.
+- `DELETE /assignments/:id` 404s an unknown id, unlike `unassign(agentId, customerId)` which reports
+  `{ deleted: false }`. Naming a specific record and being told "fine" would hide a stale id in a UI.
+- **`npm run smoke` needed a new step.** Story 7 has `agent@test.com` move a document owned by
+  `customer@test.com`, which the narrowing correctly refuses. Smoke now creates the assignment
+  through `POST /api/manager/assignments` first, so the gate exercises the new endpoint instead of
+  working around it. 18 passed, 0 failed, the same 4 not-built-yet steps.
+- Nine existing tests asserted the old permissive behaviour and now seed an assignment via a new
+  `seedAssignment` harness helper. That those nine failed is the evidence the change bites.
+- Verified over HTTP against real Postgres, which the Jest fake DB cannot do: the assigned agent gets
+  200 on a direct fetch and sees the row in the queue; an unassigned agent gets 403 on the fetch,
+  403 on the status change, and 0 rows. Manager sees 12 rows, an agent with no assignments sees 0,
+  and an agent gets 403 on `/api/manager/assignments`.
+- Suite: 16 files / 181 tests, up from 14 / 157.
+
+### Still open
+Agent scoping for `/api/customers`-style customer lists does not exist because no
+`GET /api/agent/customers` endpoint exists yet. `GET /api/manager/team`,
+`POST /assignments/bulk` and `GET /reports/workload` remain NEW. A real team boundary for managers
+is blocked on the client.

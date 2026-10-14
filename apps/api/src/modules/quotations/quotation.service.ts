@@ -1,4 +1,6 @@
+import { In } from "typeorm";
 import { AppDataSource } from "../../config/database";
+import { assignmentService } from "../assignments/assignment.service";
 import { QuotationStatusHistoryEntity } from "../../entities/quotation-status-history.entity";
 import { QuotationItemEntity } from "../../entities/quotation-item.entity";
 import { HttpError } from "../../utils/http-error";
@@ -268,8 +270,12 @@ export const quotationService = {
    * The customer ownership filter applies on both paths.
    */
   async list(actor: Actor, query?: QuotationListQuery) {
+    // The same helper the document review queue uses. An agent sees quotations for
+    // their assigned customers only; manager and admin are unrestricted.
+    const scope = await assignmentService.customerScopeFor(actor);
     const where = {
       ...(actor.role === UserRole.Customer ? { customerId: actor.id } : {}),
+      ...(scope ? { customerId: In(scope) } : {}),
       ...(query?.status ? { status: query.status } : {}),
     };
     const order = SORT_ORDERS[query?.sort ?? "-createdAt"];
@@ -277,7 +283,15 @@ export const quotationService = {
       query !== undefined &&
       (query.page !== undefined || query.pageSize !== undefined || query.limit !== undefined);
 
+    // An agent with no assignments sees nothing. Short-circuited rather than built
+    // into the query because In([]) is invalid SQL.
+    const emptyScope = scope !== null && scope.length === 0;
+
     if (!paginating) {
+      if (emptyScope) {
+        return [];
+      }
+
       const rows = await quotations().find({ where, relations: LIST_RELATIONS, order });
       return Promise.all(rows.map(decorateRow));
     }
@@ -286,6 +300,11 @@ export const quotationService = {
     // pageSize wins over limit: limit exists only so an API client that reached for
     // the commoner name is not silently given 25 rows.
     const pageSize = query.pageSize ?? query.limit ?? DEFAULT_PAGE_SIZE;
+
+    if (emptyScope) {
+      return { data: [], pagination: { page, pageSize, total: 0, totalPages: 0 } };
+    }
+
     const [rows, total] = await quotations().findAndCount({
       where,
       relations: LIST_RELATIONS,

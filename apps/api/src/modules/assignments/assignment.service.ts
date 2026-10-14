@@ -92,6 +92,51 @@ export const assignmentService = {
     return { deleted: true };
   },
 
+  /**
+   * Removes one assignment by its own id, for `DELETE /api/manager/assignments/:id`.
+   *
+   * Unlike `unassign`, a missing row is a 404 here: the caller named a specific
+   * record, so answering "fine" would hide a stale id in a UI.
+   */
+  async removeById(id: string): Promise<{ id: string; deleted: true }> {
+    assertDatabaseReady();
+
+    const existing = await assignments().findOne({ where: { id } });
+
+    if (!existing) {
+      throw new HttpError(404, "Assignment not found");
+    }
+
+    await assignments().delete({ id });
+    return { id, deleted: true };
+  },
+
+  /** Assignments, newest first, optionally narrowed to one agent or customer. */
+  async list(query: { agentId?: string; customerId?: string; page: number; pageSize: number }) {
+    assertDatabaseReady();
+
+    const where = {
+      ...(query.agentId ? { agentId: query.agentId } : {}),
+      ...(query.customerId ? { customerId: query.customerId } : {}),
+    };
+    const [rows, total] = await assignments().findAndCount({
+      where,
+      order: { createdAt: "DESC" },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
+
+    return {
+      data: rows,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
+        totalPages: Math.ceil(total / query.pageSize),
+      },
+    };
+  },
+
   /** The customer ids assigned to `agentId`. */
   async listForAgent(agentId: string): Promise<string[]> {
     assertDatabaseReady();
@@ -122,5 +167,29 @@ export const assignmentService = {
 
     const count = await assignments().count({ where: { agentId, customerId } });
     return count > 0;
+  },
+
+  /**
+   * The customer-id filter a staff actor's list queries must apply, or `null` when
+   * the actor is unrestricted.
+   *
+   * **This is the single helper both `/api/agent/documents` and
+   * `/api/agent/quotations` scope through**, so "what an agent may list" is decided
+   * in one place and cannot drift between the two.
+   *
+   * An empty array is meaningful and distinct from `null`: it is an agent with no
+   * customers, who must see nothing. Callers have to branch on that before building
+   * an `In([])`, which Postgres rejects.
+   *
+   * Manager and admin return `null` by the decision of 2026-10-14: there is no team
+   * concept anywhere in the schema to narrow a manager against, so narrowing them
+   * would have meant inventing one.
+   */
+  async customerScopeFor(actor: { id: string; role: UserRole }): Promise<string[] | null> {
+    if (actor.role === UserRole.Agent) {
+      return this.listForAgent(actor.id);
+    }
+
+    return null;
   },
 };

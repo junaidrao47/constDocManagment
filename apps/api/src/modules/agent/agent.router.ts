@@ -20,5 +20,5 @@ agentRouter.get("/documents", authorize(UserRole.Agent, UserRole.Manager), (req:
     res.status(400).json({ success: false, error: "Invalid document status", code: 400 });
     return;
   }
-  documentService.listReviewDocuments(status).then((data) => res.json({ success: true, data, message: "ok" })).catch(next);
+  documentService.listReviewDocuments({ id: req.user!.id, role: req.user!.role }, status).then((data) => res.json({ success: true, data, message: "ok" })).catch(next);
 });

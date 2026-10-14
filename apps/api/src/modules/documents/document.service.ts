@@ -1,4 +1,6 @@
+import { In } from "typeorm";
 import { AppDataSource } from "../../config/database";
+import { assignmentService } from "../assignments/assignment.service";
 import { HttpError } from "../../utils/http-error";
 import {
   buildLocalDownloadUrl,
@@ -141,7 +143,7 @@ async function requireDocument(documentId: string): Promise<DocumentEntity> {
  * their assigned customers needs the assignment table, which does not exist yet.
  * That is a deliberate, dated gap rather than an oversight.
  */
-function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): void {
+async function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): Promise<void> {
   if (actor.role === UserRole.Customer) {
     if (document.customerId !== actor.id) {
       throw new HttpError(403, "Forbidden");
@@ -150,13 +152,22 @@ function assertCanReadDocument(document: DocumentEntity, actor: DocumentActor): 
     return;
   }
 
-  if (
-    actor.role === UserRole.Agent ||
-    actor.role === UserRole.Manager ||
-    actor.role === UserRole.Admin
-  ) {
-    // TODO(phase-4): once assignments exist, an agent must be limited to documents
-    // belonging to customers assigned to them.
+  // Manager and admin keep organisation-wide visibility. There is no team concept
+  // anywhere in the schema to narrow a manager against — no manager_id, no team
+  // table, no branch — so narrowing them would have meant inventing one. Recorded
+  // in docs/decision-log.md for 2026-10-14.
+  if (actor.role === UserRole.Manager || actor.role === UserRole.Admin) {
+    return;
+  }
+
+  // An agent reads only their assigned customers. A customer assigned to nobody is
+  // therefore invisible to every agent, which is deliberate: assigning them is the
+  // step that puts their documents into a review queue.
+  if (actor.role === UserRole.Agent) {
+    if (!(await assignmentService.isAssigned(actor.id, document.customerId))) {
+      throw new HttpError(403, "Forbidden");
+    }
+
     return;
   }
 
@@ -175,11 +186,7 @@ function assertCanWriteDocumentFile(document: DocumentEntity, actor: DocumentAct
   }
 }
 
-function assertCanUploadApprovedVersion(document: DocumentEntity, actor: DocumentActor): void {
-  if (actor.role === UserRole.Customer && document.customerId !== actor.id) {
-    throw new HttpError(403, "Forbidden");
-  }
-
+async function assertCanUploadApprovedVersion(document: DocumentEntity, actor: DocumentActor): Promise<void> {
   if (
     actor.role !== UserRole.Agent &&
     actor.role !== UserRole.Manager &&
@@ -187,6 +194,10 @@ function assertCanUploadApprovedVersion(document: DocumentEntity, actor: Documen
   ) {
     throw new HttpError(403, "Forbidden");
   }
+
+  // Delegates the agent-assignment scope rather than repeating the condition, so a
+  // reviewer can never write to a document they are forbidden to read.
+  await assertCanReadDocument(document, actor);
 }
 
 export const documentService = {
@@ -214,12 +225,22 @@ export const documentService = {
     };
   },
 
-  async listReviewDocuments(status?: string) {
+  async listReviewDocuments(actor: DocumentActor, status?: string) {
     assertDatabaseReady();
+
+    // The same helper the quotation list uses, so the two cannot disagree about
+    // what an agent is allowed to see.
+    const scope = await assignmentService.customerScopeFor(actor);
+    if (scope !== null && scope.length === 0) {
+      return [];
+    }
 
     const repository = AppDataSource.getRepository(DocumentEntity);
     const documents = await repository.find({
-      where: status ? { status: status as DocumentStatus } : {},
+      where: {
+        ...(status ? { status: status as DocumentStatus } : {}),
+        ...(scope ? { customerId: In(scope) } : {}),
+      },
       order: { updatedAt: "DESC" },
     });
 
@@ -291,7 +312,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanUploadApprovedVersion(document, actor);
+    await assertCanUploadApprovedVersion(document, actor);
 
     const safeName = sanitizeFileName(file.originalName || "approved-document.pdf");
     if (!safeName || safeName === "." || safeName === "..") {
@@ -315,7 +336,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanReadDocument(document, actor);
+    await assertCanReadDocument(document, actor);
 
     const signedUrl = await getDownloadUrl({ key: document.s3Key });
 
@@ -330,7 +351,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanReadDocument(document, actor);
+    await assertCanReadDocument(document, actor);
 
     if (!document.approvedS3Key) {
       throw new HttpError(404, "Approved document version not found");
@@ -349,7 +370,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanReadDocument(document, actor);
+    await assertCanReadDocument(document, actor);
 
     return document;
   },
@@ -359,7 +380,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanReadDocument(document, actor);
+    await assertCanReadDocument(document, actor);
 
     return normalizeDocument(document);
   },
@@ -379,7 +400,7 @@ export const documentService = {
     assertDatabaseReady();
 
     const document = await requireDocument(documentId);
-    assertCanReadDocument(document, actor);
+    await assertCanReadDocument(document, actor);
 
     const rows = await AppDataSource.getRepository(DocumentStatusHistoryEntity).find({
       where: { documentId },
@@ -417,6 +438,11 @@ export const documentService = {
     const documentRepository = AppDataSource.getRepository(DocumentEntity);
     const historyRepository = AppDataSource.getRepository(DocumentStatusHistoryEntity);
     const document = await requireDocument(documentId);
+
+    // The write path had no ownership check at all: it gated on role only, so an
+    // agent could approve or reject a document they are forbidden to open. Same
+    // helper as the reads, so the two agree by construction.
+    await assertCanReadDocument(document, actor);
 
     if (input.fromStatus && document.status !== input.fromStatus) {
       throw new HttpError(409, "Document status mismatch");

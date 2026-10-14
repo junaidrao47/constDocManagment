@@ -144,6 +144,30 @@ export function seedDocument(customerId: string, status: DocumentStatus = Docume
  * route falls through to `res.download` on local storage, so the file has to exist
  * for the test to prove anything about who is allowed to read it.
  */
+/**
+ * Makes `agentId` responsible for `customerId`.
+ *
+ * Needed by any test where an agent reaches a customer's records: since the
+ * document and quotation scoping landed, an agent with no assignment is correctly
+ * refused, so the assignment is part of the fixture rather than an extra.
+ */
+export function seedAssignment(agentId: string, customerId: string, assignedBy: string | null = null): string {
+  const id = crypto.randomUUID();
+  const now = new Date();
+
+  fakeDb.assignments().seed({
+    id,
+    agentId,
+    customerId,
+    assignedBy,
+    note: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return id;
+}
+
 export function writeLocalDocument(s3Key: string, contents: string): string {
   const filePath = path.join(process.cwd(), "storage", "documents", s3Key);
 

@@ -13,6 +13,7 @@ import { quotationRouter } from "./modules/quotations/quotation.router";
 import { userRouter } from "./modules/users/user.router";
 import { publicRouter } from "./modules/public/public.router";
 import { agentRouter } from "./modules/agent/agent.router";
+import { managerRouter } from "./modules/manager/manager.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
 import { errorHandler } from "./middleware/errorHandler";
@@ -128,6 +129,10 @@ export function createApp() {
   // oversight lives under /api/manager, which Phase 4 adds along with assignments.
   app.use("/api/admin", authenticate, authorize(UserRole.Admin), adminRouter);
   app.use("/api/admin/catalog", authenticate, authorize(UserRole.Admin), adminCatalogRouter);
+  // Manager oversight: assignments. Admin is included deliberately — the RBAC matrix
+  // gives both roles "assign customer to agent", and an admin locked out of this
+  // could only fix a bad assignment with a database client.
+  app.use("/api/manager", authenticate, authorize(UserRole.Manager, UserRole.Admin), managerRouter);
 
   // Liveness: answers as long as the process can serve HTTP. Used by the Docker
   // healthcheck, so it deliberately does not touch Postgres or Redis — a brief

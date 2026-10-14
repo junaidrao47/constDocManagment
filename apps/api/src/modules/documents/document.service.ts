@@ -10,6 +10,7 @@ import {
   removeLocalDocument,
 } from "../../utils/s3";
 import { DocumentStatusHistoryEntity } from "../../entities/document-status-history.entity";
+import { toPublicUser, type PublicUser } from "../../utils/serialize-user";
 import { notify } from "../notifications/notify.service";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
@@ -31,6 +32,16 @@ import {
 export interface DocumentActor {
   id: string;
   role: UserRole;
+}
+
+/** One row of a document's status trail, as it leaves the service. */
+export interface DocumentHistoryEntry {
+  id: string;
+  fromStatus: DocumentStatus | null;
+  toStatus: DocumentStatus;
+  note: string | null;
+  createdAt: Date;
+  changedBy: PublicUser | null;
 }
 
 export interface CreateDocumentUploadInput {
@@ -351,6 +362,40 @@ export const documentService = {
     assertCanReadDocument(document, actor);
 
     return normalizeDocument(document);
+  },
+
+  /**
+   * The document's full status trail, oldest first.
+   *
+   * `document_status_history` has been written on every transition since Phase 0
+   * and had no endpoint, so the data this returns already exists for every
+   * document in the database.
+   *
+   * The actor on each row is reduced to its public fields. The loaded relation is
+   * a `UserEntity` carrying `passwordHash` and `tokensValidFrom`, and returning it
+   * as-is is the defect `docs/decision-log.md` records for 2026-10-11.
+   */
+  async history(actor: DocumentActor, documentId: string): Promise<DocumentHistoryEntry[]> {
+    assertDatabaseReady();
+
+    const document = await requireDocument(documentId);
+    assertCanReadDocument(document, actor);
+
+    const rows = await AppDataSource.getRepository(DocumentStatusHistoryEntity).find({
+      where: { documentId },
+      relations: { changedByUser: true },
+      order: { createdAt: "ASC" },
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      fromStatus: row.fromStatus ?? null,
+      toStatus: row.toStatus,
+      note: row.note ?? null,
+      createdAt: row.createdAt,
+      // null for a system transition, such as the expiry cron.
+      changedBy: row.changedByUser ? toPublicUser(row.changedByUser) : null,
+    }));
   },
 
   async updateDocumentStatus(actor: DocumentActor, documentId: string, input: UpdateDocumentStatusInput, adminOverride = false) {

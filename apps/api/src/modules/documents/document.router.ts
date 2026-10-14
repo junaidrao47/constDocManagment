@@ -172,6 +172,13 @@ documentRouter.get(
 );
 
 documentRouter.get(
+  "/:id/history",
+  authorize(...READ_ROLES),
+  validateParams(DocumentIdParamSchema),
+  sendAsync((req) => documentService.history(actor(req), req.params.id)),
+);
+
+documentRouter.get(
   "/:id/download-url",
   authorize(...READ_ROLES),
   validateParams(DocumentIdParamSchema),

@@ -35,14 +35,19 @@ export const publicService = {
 
   async listPackages() {
     const packages = await AppDataSource.getRepository(PackageEntity).find({
+      // Until `is_active` existed there was nothing to filter on, so drafts and
+      // retired packages were served to the public site alongside live ones.
+      where: { isActive: true },
       relations: { services: true },
-      order: { name: "ASC" },
+      order: { isFeatured: "DESC", sortOrder: "ASC", name: "ASC" },
     });
 
     return packages.map((pkg) => ({
       id: pkg.id,
       name: pkg.name,
       type: pkg.type,
+      description: pkg.description ?? null,
+      isFeatured: pkg.isFeatured,
       price: numberValue(pkg.price),
       durationDays: pkg.durationDays,
       services: (pkg.services ?? []).map((service) => ({

@@ -48,6 +48,14 @@ export const AppDataSource = {
     }
 
     const created = new FakeRepository<Record<string, unknown>>(labelFor(target));
+    if (target === DocumentStatusHistoryEntity) {
+      // Mirrors TypeORM `relations: { changedByUser: true }` and hydrates the full
+      // user row, secrets included. A service that forgets toPublicUser() then
+      // fails its test rather than passing against a conveniently thin fake.
+      created.defineRelation("changedByUser", (row) =>
+        AppDataSource.getRepository(UserEntity).all().find((user) => user.id === row.changedBy),
+      );
+    }
     if (target === QuotationEntity) {
       // Mirrors TypeORM `relations: { customer: true }`: the full user row, secrets
       // included, exactly what a service would receive from Postgres.

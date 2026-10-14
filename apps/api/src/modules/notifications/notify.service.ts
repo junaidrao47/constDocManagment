@@ -2,6 +2,7 @@ import { AppDataSource } from "../../config/database";
 import { NotificationLogEntity } from "../../entities/notification-log.entity";
 import { UserEntity } from "../users/user.entity";
 import { logger } from "../../utils/logger";
+import { resolveWebUrl } from "../../utils/web-url";
 import { enqueueEmail, type EmailJobData } from "./email-queue";
 
 export type { EmailJobData } from "./email-queue";
@@ -106,7 +107,7 @@ export const notificationService = createNotifyService({
   },
   enqueue: (data) => enqueueEmail(data),
   logError: (message) => logger.error(`[notification] ${message}`),
-  portalUrl: process.env.WEB_URL ?? "",
+  portalUrl: resolveWebUrl() ?? "",
 });
 
 export const notify = notificationService.notify;

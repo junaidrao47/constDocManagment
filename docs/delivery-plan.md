@@ -5,6 +5,12 @@ Companion document: `docs/api-surface.md` for the endpoint-level specification.
 
 Baseline date: 2026-09-03. Timeline: 8 weeks hard cap, 6–7 week build target.
 
+> **⚠️ PARTIALLY SUPERSEDED — corrected 2026-10-14.** This document is the record of what was
+> *planned* on 2026-09-03 and its phase structure still stands. Its *status* claims do not: the
+> frontend is no longer 0%, it lives in two separate repositories rather than `apps/web`, and the
+> security and test gaps described below are closed. Corrections are marked **[2026-10-14]** inline.
+> For where the project actually stands, read **`docs/build-audit-2026-10-14.md`**.
+
 ---
 
 ## 1. Where the project actually stands today
@@ -16,14 +22,41 @@ Before phasing anything, this is the verified state of the codebase, not an esti
 - Docker stack (`api`, `worker`, `postgres`, `redis`, `nginx`) with fail-fast env validation, healthchecks, graceful shutdown, and idempotent migrations.
 - Authentication: register, login, refresh with rotation, logout, reset-password. Refresh tokens SHA-256 hashed, stored in Postgres with a Redis mirror.
 - Document workflow end to end: presigned S3 upload with local-disk fallback, download, status transitions guarded by a real state machine, full audit trail in `document_status_history`.
-- The pricing engine. `apps/api/src/modules/pricing/pricing.engine.ts` implements `workerBasePrice × locationMultiplier + serviceTotal + cityFee` and is correct — but **no HTTP route calls it**, so the calculator is unreachable.
+- The pricing engine. `apps/api/src/modules/quotations/pricing.engine.ts` implements `workerBasePrice × locationMultiplier × industryWeight + serviceTotal + cityFee`. **[2026-10-14: fixed.** It is now wired to `POST /api/public/quotations/calculate`, and `industries.price_weight` is real and applied, so the industry selector affects price. The path above was also wrong — the file is under `modules/quotations/`, not `modules/pricing/`.**]**
 - 16 tables, 18 foreign keys, 2 Postgres enums.
 
 **Declared but empty:** `/api/quotations`, `/api/pricing`, `/api/packages` and all 8 `/api/admin` routes return hardcoded `[]`, `{}` or `total: 0`. `payments` and `subscriptions` routers are `export const x = {}` and are not mounted, so `/api/subscriptions`, `/api/payments` and `/api/invoices` return 404. All 9 worker queue/processor/cron files are stubs. `notifications_log` has no write path anywhere in the codebase.
 
-**Not started:** the entire frontend. There are zero `.tsx` files in the repository and no `next.config.*`. The public website and all three portals are greenfield.
+> **[2026-10-14: mostly fixed.]** `/api/admin` now has 42 real routes (users, quotations, invoices,
+> packages, services, industries, worker-ranges, locations, settings, documents). `/api/public` has 6.
+> `notifications_log` has a real writer — `modules/notifications/notify.service.ts` → BullMQ → 8
+> Handlebars templates in the worker. Of the 9 worker files, `email.queue`, `email.processor` and
+> `renewal.cron` are real; `expiry.cron`, `backup.cron`, `document.processor`, `renewal.processor`,
+> `document.queue` and `renewal.queue` are **still stubs**, and neither expiry nor backup is
+> registered in `worker.ts`. **Still true:** `payments`/`subscriptions` routers remain one-line stubs
+> and are not mounted; `GET /api/admin/subscriptions` and `/api/admin/analytics` still return
+> `"not implemented"`. There is also still no `/api/manager` and no `/api/webhooks`.
 
-Honest reading: the backend is roughly 40% built, the frontend is 0%, and the 8-week cap is tight but reachable **only** if the status-and-notification fabric from scope §6a is built once as shared infrastructure rather than five times per module. That single choice is the difference between a comfortable delivery and a missed deadline.
+**[2026-10-14 — CORRECTED] Frontend:** two separate Next.js repositories exist and are building
+cleanly. `customer-portal` (Next 16.3.5) has 13 routes and is ~55% complete; `admin-frontend`
+(Next 15.5.7) has 14 routes and is ~25% — ~10% on the admin surface, ~41% on staff. Neither is
+containerised and neither has CI.
+
+> *As written 2026-09-03:* "Not started: the entire frontend. There are zero `.tsx` files in the
+> repository and no `next.config.*`. The public website and all three portals are greenfield."
+> That was true then and is false now.
+
+Honest reading *(as written 2026-09-03)*: the backend is roughly 40% built, the frontend is 0%, and
+the 8-week cap is tight but reachable **only** if the status-and-notification fabric from scope §6a is
+built once as shared infrastructure rather than five times per module. That single choice is the
+difference between a comfortable delivery and a missed deadline.
+
+> **[2026-10-14]** Backend ~54%, frontend ~34%, overall **~43% of scope**. The warning above was not
+> heeded: the status fabric was built **per module** — `document_status_history` and
+> `quotation_status_history` are separate tables and subscriptions, invoices and payments have no
+> audit table at all. There is no unified `status_history`, so `GET /api/admin/audit-log` is not
+> buildable. Unifying it is still open work, and doing it after the remaining modules land is the
+> five-rewrites outcome this paragraph predicted.
 
 ---
 
@@ -54,6 +87,16 @@ Every row here is work the scope document requires and the database cannot curre
 
 Found while auditing the current code. The first is severe and should be fixed before anything else is built on top of the auth module.
 
+> **[2026-10-14: all nine are closed.]** Verified in code: forgot-password emails an opaque token and
+> answers identically for known, unknown and disabled addresses; staff can read and download
+> documents; `authenticate` loads the live user row (Redis-cached) so a demotion or deactivation
+> takes effect on the next request; `/api/admin` is admin-only; reset-password revokes every session;
+> `authorize()` is typed against `UserRole`; uploads have a 9-type MIME **and** extension allow-list;
+> `POST /api/admin/users` creates agent/manager/admin accounts. Covered by
+> `test/auth-reset-token.test.ts` and `test/phase1-gate.test.ts`, and the suite now runs green.
+> **One item did not land: defect-adjacent decision A (HTTP-only cookies) was never implemented** —
+> see §4A below.
+
 1. **`POST /api/auth/forgot-password` returns the password-reset token in the HTTP response body** (`auth.service.ts:302`). Anyone who knows an email address can request a reset and read the token straight out of the response, then take over the account. It must email the token and return an opaque success.
 2. The same endpoint **404s on an unknown email**, which confirms which addresses are registered. It must return the same response either way.
 3. **Agents, managers and admins cannot read documents at all.** Every read route on `/api/documents` is gated `authorize("customer")`, while the status-change route is `authorize("agent","admin")` — so a reviewer can approve a document they are unable to open. Managers are excluded from review entirely. This blocks the whole of scope §8.
@@ -72,7 +115,20 @@ These three are yours (or the client's) to make. Each one changes work in a diff
 
 **A. Cookie auth or bearer tokens.** Scope §11 promises HTTP-only cookies. The code issues bearer tokens in the response body. Cookies are the safer default for browser portals and are what was signed for, but they require `cookie-parser`, `SameSite` configuration, a CSRF defence, and an exact `CORS_ORIGIN` per portal. Recommended: cookies for the four browser surfaces, keeping bearer support for testing and any future mobile client. Affects Phase 1.
 
+> **[2026-10-14: NOT DECIDED, and the code shipped the other way.]** Both frontends authenticate with
+> `Authorization: Bearer` and store the session — **including the refresh token** — in
+> `sessionStorage`, which is XSS-readable. `cookie-parser` is not installed and there is no CSRF
+> defence. This is a live deviation from scope §11 and needs either implementing or accepting in
+> writing; it now touches every page in two repos rather than a greenfield one.
+
 **B. One repository or two.** The frontend does not exist yet. Adding `apps/web` to this repository keeps one Docker stack, one CI pipeline and shared TypeScript types; a separate repository decouples deploys. Recommended: same repository as `apps/web`, which adds a fifth container and therefore amends AGENT.md rule 5. Affects Phase 6.
+
+> **[2026-10-14: DECIDED — two repositories, against this recommendation.]** The frontends live at
+> `../customer-portal` and `../admin-frontend` as independent git repositories. `apps/web` was never
+> created. Consequences now visible: no shared TypeScript types (both repos hand-maintain their own
+> `types.ts` mirroring the API entities), no shared CI, and the two have already drifted to different
+> majors — Next 16.3.5 / React 19.2.8 versus Next 15.5.7 / React 19.1.0, with nothing enforcing
+> either. AGENT.md rule 5 therefore still correctly names four containers.
 
 **C. Payment gateway.** Scope §9 leaves this to the client's region and business account. Nothing else in Phase 5 can be finished without it. This is the single most likely cause of timeline slip, because it is a client dependency, not a development task. Ask for it in writing during Week 1 and build against a provider-agnostic interface so the choice can land late.
 
@@ -94,7 +150,7 @@ Close all nine defects in section 3. Decide item A above and implement it. Add `
 
 *Gate:* the reset-token leak is gone and covered by a test; an agent can fetch and download a document they are reviewing; a deactivated user is refused within seconds rather than 15 minutes; a manager receives 403 on admin-only routes.
 
-All four gate conditions now have tests — `apps/api/test/auth-reset-token.test.ts` for the first, `apps/api/test/phase1-gate.test.ts` for the other three. **The suite has not been executed yet**, so the gate is written but not passed. It needs `npm install` (for the added `@types/jest`), `npm run typecheck`, `npm run typecheck:test`, `npm test`, and one `docker compose up` so migration `AddSessionInvalidation1700000001000` applies to a real database. Until that run happens, treat Phase 1 the same way as Phase 0: written, reviewed, unproven.
+All four gate conditions now have tests — `apps/api/test/auth-reset-token.test.ts` for the first, `apps/api/test/phase1-gate.test.ts` for the other three. ~~**The suite has not been executed yet**, so the gate is written but not passed.~~ **[2026-10-14: the suite runs green — 11 suites, 120/120 tests. The Phase 1 gate is passed, with the exception of decision A (cookies), which was never implemented; see §4A.]** It needs `npm install` (for the added `@types/jest`), `npm run typecheck`, `npm run typecheck:test`, `npm test`, and one `docker compose up` so migration `AddSessionInvalidation1700000001000` applies to a real database. Until that run happens, treat Phase 1 the same way as Phase 0: written, reviewed, unproven.
 
 ### Phase 2 — Shared status and notification fabric · Weeks 1–2
 
@@ -131,6 +187,12 @@ Subscription lifecycle with renewal dates. Invoice generation from a subscriptio
 
 Stand up `apps/web` (Next.js App Router, TypeScript, Tailwind, shadcn/ui) as a fifth container. Add the three content tables the public site needs — `faqs`, `reviews`, `contact_submissions` — with public read endpoints and admin moderation.
 
+> **[2026-10-14]** Done differently: two standalone repos, not `apps/web`, and **neither is
+> containerised** — no Dockerfile, no `output: "standalone"`, no compose service, and nginx still
+> returns a hardcoded placeholder string at `/`. The only way to serve them today is `npm run dev`.
+> The three content tables were **never created**, so `/faq` ships a hardcoded array, `/contact` has
+> no form at all, and there is no reviews surface.
+
 Public pages: Home, About, Services, Packages, Contact, FAQs, reviews section, call-to-action blocks, and the SEO baseline (metadata per route, `sitemap.xml`, `robots.txt`, Open Graph tags, JSON-LD for the business). The pricing calculator lives here, unauthenticated, as the primary lead-generation surface.
 
 Customer portal: dashboard, documents with upload and status tracking, quotations, subscriptions, invoices, payment history, notification centre.
@@ -147,7 +209,7 @@ Agent and manager portal per §8: assigned customers, document review queue with
 
 ### Phase 8 — Automation, deployment and hardening · Week 7
 
-Remaining crons: document and quotation expiry scan, subscription renewal reminders, overdue-invoice sweep, database backup to the S3 backup bucket. CI/CD through `.github/workflows/deploy.yml`, which is currently a 13-line `echo` placeholder and validates nothing. TLS termination (the nginx config has a documented placeholder block, and `compose.prod.yml` already publishes 443 and mounts the cert volume). Rate-limit tuning, structured logging, error monitoring, and the basic technical documentation promised in §16.
+Remaining crons: document and quotation expiry scan, subscription renewal reminders, overdue-invoice sweep, database backup to the S3 backup bucket. CI/CD through `.github/workflows/deploy.yml`, which is currently a 13-line `echo` placeholder and validates nothing. **[2026-10-14: `deploy.yml` was deleted in commit `5e9e58d` and replaced by nothing — nothing deploys anywhere. `ci.yml` is real but covers `apps/api` only: no worker job, no lint, no Docker build, and crucially no `npm run smoke`, so entity/migration drift still reaches production undetected. Both frontend repos have no CI at all.]** TLS termination (the nginx config has a documented placeholder block, and `compose.prod.yml` already publishes 443 and mounts the cert volume). Rate-limit tuning, structured logging, error monitoring, and the basic technical documentation promised in §16.
 
 *Gate:* a push to the deployment branch builds, runs typecheck and tests, and deploys. Every cron has run at least once in staging and is idempotent across ticks.
 
@@ -179,14 +241,18 @@ Interpreting "every port that must have" both ways: the container ports are here
 |---|---|---|---|---|
 | `nginx` | 80, 443 | `80` (only under `--profile proxy`) | `80`, `443` | Only service reachable from outside the Docker network in production. TLS block is a documented placeholder until certificates exist |
 | `api` | 3001 | `3001` | published as `3001` | Reached directly at port 3001 or through nginx at `/api/`. `client_max_body_size` is 26 MB to sit just above multer's 25 MB cap |
-| `web` (Phase 6) | 3000 | `3001` | not published | New container. Proxied at `/` by nginx, which currently returns a placeholder string there |
+| ~~`web` (Phase 6)~~ | — | — | — | **[2026-10-14: never built.** The two frontends are separate uncontainerised repos run with `npm run dev` on ports 3000 (`admin-frontend`) and 3002 (`customer-portal`). They are **not** proxied by nginx, which still returns a placeholder at `/`. The stack remains four containers plus nginx.**]** |
 | `worker` | none | none | none | No listener. Consumes BullMQ queues only |
 | `postgres` | 5432 | `127.0.0.1:15432` | not published | Localhost-bound in dev so host tooling works without exposing it to the network. Host side is 15432, not 5432 — Windows reserves TCP blocks for Hyper-V/WSL and 5432 would not bind |
 | `redis` | 6379 | `127.0.0.1:16379` | not published | Localhost-bound; no password is set, so it must never be published to a network interface. Off the default port for the same reason as Postgres |
 
 Container ports never change: the api and worker reach the dependencies as `postgres:5432` and `redis:6379` over the Compose network. Only the host-side publish ports moved, and only development publishes them at all.
 
-Adding `web` takes the stack to five containers and therefore amends AGENT.md rule 5, which currently names four. That is recorded in `docs/decision-log.md`.
+~~Adding `web` takes the stack to five containers and therefore amends AGENT.md rule 5, which currently names four.~~
+
+> **[2026-10-14]** This did not happen. No `web` container exists, so AGENT.md rule 5's four
+> containers (`api`, `worker`, `postgres`, `redis`, plus `nginx`) are still accurate. The
+> decision-log entry recording the `apps/web` plan is superseded — see the 2026-10-14 entry.
 
 ---
 
@@ -198,13 +264,27 @@ Ranked by how likely each is to cost the deadline.
 2. **Frontend is 0% and is over half the remaining work.** Four surfaces — public site plus three portals — in roughly two and a half weeks (Phases 6–7). This is the part of the estimate with the least slack. If something has to give, the admin dashboard is the place to ship a functional-but-plain UI first and polish in Week 8.
 3. **Phase 2 is load-bearing for Phases 3, 4 and 5.** Building the status fabric per module instead of once turns roughly one week into roughly three and multiplies the notification bugs by five.
 4. **Client content and pricing rules gate Phases 3 and 6.** §14 makes this the client's responsibility; §12 makes delays their timeline cost. Send one consolidated request in Week 1 rather than asking module by module.
-5. **No automated tests exist.** `jest`, `ts-jest` and `supertest` are in `devDependencies` with no config and no `test` script. Phase 1 should land a working test harness, because from Phase 2 onward the status fabric needs regression cover — five modules sharing one code path means one bug reaches all five.
+5. ~~**No automated tests exist.**~~ **[2026-10-14: fixed, but the risk inverted.]** There are now 11
+   suites and **120 passing tests**, plus a real harness in `apps/api/test/support/`. The new risk is
+   worse than the old one: `jest.config.js` maps the data source to an **in-memory fake**, so the
+   suite cannot see a column on an entity with no migration, a column in Postgres on no entity, or a
+   relation whose `@OneToMany` lacks `cascade`. **This has produced four production bugs while all
+   120 tests passed.** `npm run smoke` against real Postgres is the authoritative gate; CI does not
+   run it. Treat this as the top risk in the repo.
 
 ---
 
 ## 9. Verification status of Phase 0
 
 Everything in Phase 0 was written and statically reviewed, but **nothing has been executed** — the sandboxed Linux environment used for builds failed to start throughout the session that produced it (`VM_DISK_SPACE_INSUFFICIENT`), so no `docker compose build`, no `tsc --noEmit`, and no container start has been confirmed.
+
+> **[2026-10-14: partly resolved.]** The static checks have now all run and passed:
+> `npm run typecheck`, `npm run typecheck:test`, `npm test` (11 suites, 120/120) and the worker's
+> `npx tsc --noEmit -p .` all exit 0, and both frontends typecheck, lint, test and build clean.
+> Docker has since been run successfully — the migrations in `1820` and `1830` were applied against
+> real Postgres and are recorded in `docs/decision-log.md`. **Still unverified as of this date:**
+> `npm run smoke` could not be re-run because Docker Desktop was not running, so no current
+> end-to-end confirmation exists. Run it before trusting any status figure.
 
 Run this before starting Phase 1, and treat the Phase 0 gate as unmet until it passes:
 

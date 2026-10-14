@@ -434,3 +434,117 @@ Entity↔migration drift is treated as a recurring defect class, not a series of
 - Migration `1830000000000-FixSchemaDrift`: drops `NOT NULL` on `quotation_items.service_id`, drops `payments.status` and `payments.gateway_ref`, and gives `subscriptions.status` a default of `active`. Its `down()` backfills before restoring `NOT NULL` and fails loudly rather than deleting rows.
 - `QuotationEntity.items` is now `{ cascade: ["insert"] }`. Line items persist; a staff quotation stores its `worker_base`, city-fee and extra-line rows with a null `service_id`.
 - `npm run smoke` is the authoritative gate from now on: a green `npm test` is not evidence that a persistence change works. Steps this build has not delivered yet print `SKIP` with the owning phase, so the script is also the milestone scoreboard.
+
+
+## 2026-10-14
+
+### Decision
+A full code-truth audit of all three repositories is recorded in `docs/build-audit-2026-10-14.md`,
+and that document — not `docs/delivery-plan.md` — is now the reference for project status.
+`delivery-plan.md` has been corrected inline (markers: `[2026-10-14]`) and remains the record of what
+was *planned*. `docs/api-surface.md` remains the endpoint specification.
+
+### Why
+- `delivery-plan.md` had not been touched since 2026-09-16 while the code ran to 2026-10-12. It still
+  asserted "the entire frontend... zero `.tsx` files", "the frontend is 0%", that `deploy.yml` was a
+  13-line echo placeholder, and that no automated tests existed. All four were false.
+- Status was being read from a document a month out of date, which is how the `apps/web` plan and the
+  two-repo reality coexisted in the docs without anyone noticing they contradict.
+
+### Result
+- Measured state: backend ~54%, frontend ~34%, **~43% of scope overall**. Static analysis only —
+  `npm run smoke` could not run (Docker was down), so every figure carries an error bar.
+- Verified green: `npm run typecheck`, `npm run typecheck:test`, `npm test` (11 suites, 120/120),
+  worker `tsc --noEmit`, and both frontends' typecheck + lint + vitest + production build.
+- 20 deviations from the scope documents catalogued, with the five most consequential being: bearer
+  tokens instead of the HTTP-only cookies promised by scope §11; `payments.status` deliberately
+  dropped in `1830000000000-FixSchemaDrift` while the gateway is still in scope; **no unified
+  `status_history`** (built per module, which `delivery-plan.md` §8 itself ranked the #3 timeline
+  risk); accepting a quotation creates neither invoice nor subscription; and no `faqs`/`reviews`/
+  `contact_submissions` tables, so those public pages are hardcoded.
+- 12 client blockers listed. `Requirements_Clarification_Questionnaire.md` has 16 sections and all 16
+  are still blank; `docs/client-decisions.md` lists 7 topics with no answers.
+
+---
+
+## 2026-10-14
+
+### Decision
+Decision **B** from `delivery-plan.md` §4 ("one repository or two") resolved as **two separate
+repositories**, against that document's own recommendation. The `apps/web` fifth container is
+cancelled. AGENT.md rule 5's container list stays as it is.
+
+### Why
+- The frontends were built as independent git repositories at `../customer-portal` and
+  `../admin-frontend` before the decision was formally taken. This entry records the fact rather than
+  pretending the choice is still open.
+- The earlier entry in this log describing `apps/web` as a planned fifth container is **superseded**.
+
+### Result
+- No `web` service exists in `compose.yml` or `compose.prod.yml`, and **neither frontend is
+  containerised** — no Dockerfile, no `output: "standalone"`, no nginx upstream. nginx still returns
+  a hardcoded placeholder at `/`.
+- The costs the single-repo option would have avoided are now live: no shared TypeScript types (each
+  repo hand-maintains a `types.ts` mirroring the API entities), no shared CI, and version drift —
+  `customer-portal` on Next 16.3.5 / React 19.2.8 against `admin-frontend` on Next 15.5.7 /
+  React 19.1.0, with nothing enforcing either.
+
+---
+
+## 2026-10-14
+
+### Decision
+Four scoping decisions taken with the client-side stakeholder during the audit:
+1. The authoritative scope document (MJPRODS Scope v1.0) is **not in any repository** and will be
+   supplied. Until it lands, scope is measured against `delivery-plan.md` + `api-surface.md` as an
+   interim baseline.
+2. "60% of scope" means **a coherent, demoable product slice**, not 60% of remaining hours.
+3. The **online payment gateway remains in scope**. The drift to offline-only payments
+   (`bank_transfer`/`spei`/`cash`/`other`, with `payments.status` dropped) must be reversed.
+4. The `catalog` module (`catalog_categories`, `catalog_items`, `catalog_fields`,
+   `catalog_field_values`, `catalog_images` — 5 tables, ~530 LOC, 24 routes) is **unscoped extra
+   work**. It is excluded from completion figures and frozen, not extended.
+
+### Why
+- Each answer changes a different phase, and three of them had been silently assumed in code: the
+  gateway had been designed out, and the catalog module had been built without appearing in any scope
+  document.
+
+### Result
+- The payment seam (status enum, provider-agnostic `PaymentGateway` interface, idempotent
+  signature-verified webhook) is scheduled so a late provider choice costs a day rather than a week.
+  It is blocked on the client supplying provider and credentials — ranked the #1 schedule risk.
+- `catalog` is frozen. Note that the pricing engine reads only the **old** `services` / `packages` /
+  `industries` tables, so the two models are not interchangeable.
+
+---
+
+## 2026-10-14
+
+### Decision
+`tasks/` holds specs for unattended Claude Code runs, governed by `tasks/RUNNER-RULES.md` and a
+`permissions.deny` list in `tasks/runner-settings.json`. Five independent backend tasks are specified.
+
+### Why
+- `.env` on this machine holds live `AWS_SECRET_ACCESS_KEY`, `SES_SECRET_ACCESS_KEY`, `JWT_SECRET`,
+  `JWT_REFRESH_SECRET` and `DB_PASS`. A prose instruction not to read it is not enforcement; an
+  unattended agent that reads it to "check the config" and quotes a line into a blocker file has
+  written a real credential to disk. A `deny` rule beats `bypassPermissions` and holds regardless of
+  what the model decides.
+- An unattended run must not be able to change authorisation. Task 05 therefore builds the
+  `agent_customer_assignments` table, entity and service but is **forbidden** from touching
+  `assertCanReadDocument` or mounting any router — so the agent-sees-every-customer gap stays open
+  until a reviewed change closes it.
+
+### Result
+- Migration timestamps are **pre-assigned** per task (`1840000000000` packages,
+  `1850000000000` assignments) because the tasks may run on parallel branches and would otherwise
+  both claim the next slot.
+- Cardinality for `agent_customer_assignments` is **many-to-many**, `UNIQUE (agent_id, customer_id)`.
+  Client question C6 ("can one customer be assigned to multiple agents?") is unanswered, and
+  narrowing a constraint later is a simpler migration than widening one after real rows exist.
+- Quotation pagination is **opt-in** — `{data, pagination}` only when a pagination parameter is
+  present, bare array otherwise — because three live frontend pages type the response as
+  `Quotation[]` and would break unattended.
+- Tasks 02 and 05 declare themselves **incomplete without `npm run smoke`**, per the 2026-10-12
+  entry: the Jest fake DB cannot see entity/migration drift.

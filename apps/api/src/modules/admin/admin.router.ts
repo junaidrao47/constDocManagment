@@ -8,7 +8,7 @@ import { AdminEmailSchema } from "./admin-email.schema";
 import { sendEmail } from "../../utils/email";
 import { quotationService } from "../quotations/quotation.service";
 import { QuotationIdParamSchema, QuotationListQuerySchema, QuotationStatusSchema, StaffQuotationCreateSchema, type QuotationListQuery } from "../quotations/quotation.schema";
-import { PackageIdParamSchema, PackageSchema } from "../packages/package.schema";
+import { PackageIdParamSchema, PackageSchema, PackageStatusSchema } from "../packages/package.schema";
 import { packageService } from "../packages/package.service";
 import { adminPricingService } from "./admin-pricing.service";
 import { invoiceService } from "../payments/invoice.service";
@@ -146,6 +146,7 @@ adminRouter.get("/packages", send(() => packageService.list()));
 adminRouter.get("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.get(req.params.id)));
 adminRouter.post("/packages", validate(PackageSchema), send((req) => packageService.create(req.body), 201));
 adminRouter.patch("/packages/:id", validateParams(PackageIdParamSchema), validate(PackageSchema), send((req) => packageService.update(req.params.id, req.body)));
+adminRouter.patch("/packages/:id/status", validateParams(PackageIdParamSchema), validate(PackageStatusSchema), send((req) => packageService.setStatus(req.params.id, req.body.isActive)));
 adminRouter.delete("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.remove(req.params.id)));
 
 // ─── Pricing: Services ───────────────────────────────────────────────────────

@@ -11,6 +11,9 @@ export interface PackageInput {
   price: number;
   durationDays: number;
   serviceIds: string[];
+  description?: string | null;
+  sortOrder: number;
+  isFeatured: boolean;
 }
 
 function serializePackage(pkg: PackageEntity) {
@@ -74,7 +77,31 @@ export const packageService = {
   async update(id: string, input: PackageInput) {
     const repository = AppDataSource.getRepository(PackageEntity);
     const pkg = await findPackageOr404(id);
-    Object.assign(pkg, { name: input.name, type: input.type, price: input.price.toFixed(2), durationDays: input.durationDays, services: await resolveServices(input.serviceIds) });
+    // description, sortOrder and isFeatured are assigned here too: create persists them
+    // via its spread, but leaving them out of this list meant an edit silently dropped
+    // them while the schema still accepted them. isActive stays out — see setStatus.
+    Object.assign(pkg, {
+      name: input.name,
+      type: input.type,
+      price: input.price.toFixed(2),
+      durationDays: input.durationDays,
+      description: input.description ?? null,
+      sortOrder: input.sortOrder,
+      isFeatured: input.isFeatured,
+      services: await resolveServices(input.serviceIds),
+    });
+    await repository.save(pkg);
+    return this.get(id);
+  },
+  /**
+   * Retires or restores a package. Retiring drops it from the public catalogue while
+   * leaving it in the database for the subscriptions that reference it; restoring is
+   * the way back, which is why the admin list is unfiltered.
+   */
+  async setStatus(id: string, isActive: boolean) {
+    const repository = AppDataSource.getRepository(PackageEntity);
+    const pkg = await findPackageOr404(id);
+    pkg.isActive = isActive;
     await repository.save(pkg);
     return this.get(id);
   },

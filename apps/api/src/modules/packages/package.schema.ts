@@ -15,3 +15,7 @@ export const PackageSchema = z.object({
 });
 
 export const PackageIdParamSchema = z.object({ id: z.string().uuid("must be a valid package id") });
+
+// Retiring/restoring a package is its own action, kept out of PackageSchema so an
+// edit cannot silently flip it. Mirrors SetUserStatusSchema.
+export const PackageStatusSchema = z.object({ isActive: z.coerce.boolean() });

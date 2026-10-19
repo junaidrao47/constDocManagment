@@ -37,3 +37,6 @@ ssl_certs/
 
 # uploaded documents (local storage fallback) - never commit client files
 apps/api/storage/
+
+# local-only dev docs (test credentials, scratch notes) - never commit
+docs/local/

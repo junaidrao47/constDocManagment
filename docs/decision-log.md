@@ -613,3 +613,27 @@ Agent scoping for `/api/customers`-style customer lists does not exist because n
 `GET /api/agent/customers` endpoint exists yet. `GET /api/manager/team`,
 `POST /assignments/bulk` and `GET /reports/workload` remain NEW. A real team boundary for managers
 is blocked on the client.
+
+## 2026-10-14
+
+### Decision
+Added `PATCH /api/admin/packages/:id/status` ({ isActive }) and made `packageService.update`
+persist `description`, `sortOrder` and `isFeatured`.
+
+### Why
+The admin Packages UI needs to retire/restore a package and to edit its catalogue copy.
+Two gaps blocked that: (1) there was no way to flip `isActive` — `PackageSchema` deliberately
+omits it, `DELETE /packages/:id` is a hard delete, and no status route existed, so `isActive` was
+write-once at create; (2) `update()` only assigned name/type/price/durationDays/services, so an edit
+silently dropped description/sortOrder/isFeatured even though the schema accepted them (create
+persisted them via its spread, hiding the asymmetry).
+
+### Result
+- New `PackageStatusSchema` and `packageService.setStatus(id, isActive)`; new router line between
+  the PATCH and DELETE package routes. `isActive` stays out of `PackageSchema`, so an ordinary edit
+  still cannot flip it — retiring remains a distinct action.
+- `update()` now assigns description/sortOrder/isFeatured; `isActive` is still untouched there.
+- `test/packages.test.ts` gains an edit round-trip (would have failed before the fix) and a
+  retire→public-hidden→restore→public-visible toggle. No migration: `is_active`, `description`,
+  `sort_order` and `is_featured` already exist on the entity and in `1840000000000-PackageVisibility`.
+- Not yet exercised by `npm run smoke` (not run in this environment); verify there before release.

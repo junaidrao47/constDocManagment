@@ -20,3 +20,13 @@
 - Tests run against an in-memory fake DB, so entity/schema drift is invisible to them. **This has now produced four production bugs; treat it as the top risk in this repo.** All 120 tests passed while payments could not be inserted at all, staff quotations could not be inserted at all, and `quotation_items` was empty for every quotation in existence. Verify every persistence change with `npm run smoke`, never with `npm test` alone.
 - Three shapes this drift takes, all seen here: (1) a column on the entity with no migration (`documents.approved_*`); (2) a column in Postgres that is on no entity and `NOT NULL` with no default, so inserts fail (`payments.status`); (3) a relation the code populates inline but whose `@OneToMany` has no `cascade`, so TypeORM drops it without error (`QuotationEntity.items`). The fake repository hides all three.
 - `CREATE TABLE IF NOT EXISTS` in a later migration is a **no-op** on an already-migrated database, so it cannot be used to correct a table InitialSchema already created. Use explicit `ALTER`. After adding an entity column, add a migration and verify against real Postgres (`docker compose exec api npm run db:migrate`). Example: the `documents.approved_*` columns existed on the entity with no migration until `1820000000000-DocumentApprovedUpload`.
+
+## Frontend rules
+- Only call endpoints that exist. Check docs/api-surface.md in the backend repo and the router files. Never build UI on stubs (/admin/subscriptions, /admin/analytics).
+- One shared api client. Every page uses it. It handles auth header, 401 refresh, and error shape { success:false, error, code }.
+- Every data screen has loading, empty, error, and success states. No silent catch that returns [].
+- Reuse components: DataTable (pagination, sort, empty state), FormDialog, ConfirmDialog, StatusBadge, PageHeader. Build them once; never copy-paste a table.
+- Forms: React Hook Form + Zod. Show server errors inline (e.g. 409 on delete, overlap on worker ranges).
+- Money: MXN, formatted with Intl.NumberFormat; never hardcode a currency symbol.
+- Mobile-first. Check at 375px and 1280px.
+- A task ends only when: npm run lint && npx tsc --noEmit && npm run build pass.

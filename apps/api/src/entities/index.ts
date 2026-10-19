@@ -16,3 +16,4 @@ export * from "./invoice.entity";
 export * from "./notification-log.entity";
 export * from "./quotation-status-history.entity";
 export * from "./app-setting.entity";
+export * from "./agent-customer-assignment.entity";

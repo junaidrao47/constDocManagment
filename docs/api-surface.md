@@ -195,15 +195,17 @@ customer's documents rather than an assigned subset, which is deliberate and mar
 | GET | `/subscriptions` | NEW | Read-only service-progress tracking |
 | GET | `/invoices` | NEW | Read-only. Agents get no billing mutations |
 
-Manager-only oversight — `/api/manager`, split out of `/api/admin` so managers stop inheriting
-the full admin surface:
+Manager oversight — `/api/manager`, split out of `/api/admin` so managers stop inheriting
+the full admin surface. Mounted for `manager` **and** `admin`: the matrix below gives both roles
+"Assign customer to agent", and an admin locked out could only repair a bad assignment with a
+database client.
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
 | GET | `/team` | NEW | Agents with their queue depth and throughput |
-| GET | `/assignments` | NEW | Current agent-to-customer map |
-| POST | `/assignments` | NEW | Assign a customer to an agent |
-| DELETE | `/assignments/:id` | NEW | Unassign |
+| GET | `/assignments` | DONE | Current agent-to-customer map. Paginated `{data, pagination}` from the start, filterable by `agentId` or `customerId` |
+| POST | `/assignments` | DONE | Assign a customer to an agent. Idempotent on the pair; 404 on an unknown id, 400 when either end has the wrong role; `assignedBy` is taken from the token, never the body |
+| DELETE | `/assignments/:id` | DONE | Unassign by the assignment's own id. 404 on an unknown id |
 | POST | `/assignments/bulk` | NEW | Reassign a departing agent's book in one call |
 | GET | `/reports/workload` | NEW | Distribution across the team |
 
@@ -331,10 +333,10 @@ Notifications, content and analytics:
 | Create agent / manager / admin | — | — | — | ✓ |
 | Activate / deactivate a user | — | — | — | ✓ |
 | Assign customer to agent | — | — | ✓ | ✓ |
-| View customers | — | asg | asg (team) | ✓ |
+| View customers | — | asg | ✓ | ✓ |
 | Upload a document | own | — | — | — |
-| View / download a document | own | asg | asg (team) | ✓ |
-| Change document status | — | asg | asg (team) | ✓ |
+| View / download a document | own | asg | ✓ | ✓ |
+| Change document status | — | asg | ✓ | ✓ |
 | Manage document categories | — | — | — | ✓ |
 | Request a quotation | own | — | — | ✓ |
 | Accept a quotation | own | — | — | ✓ |
@@ -350,10 +352,19 @@ Notifications, content and analytics:
 | FAQs, reviews, contact inbox | — | — | — | ✓ |
 | Analytics and audit log | — | — | r (team) | ✓ |
 
-Both rows that used to contradict the code are now aligned with it: staff can read and download
-documents, and `/api/admin` is admin-only. The remaining gap in this matrix is `asg` — agents and
-managers are currently granted the same document visibility as an admin, because there is no
-assignment table to narrow it against. Phase 4 turns `✓` back into `asg` in one service helper.
+This matrix now matches the code. Staff can read and download documents, `/api/admin` is
+admin-only, and as of 2026-10-14 **`asg` is real for agents**: an agent reads, downloads and changes
+the status of documents and quotations only for customers assigned to them, decided in one helper
+(`assignmentService.customerScopeFor`) and enforced in one guard
+(`document.service.ts` `assertCanReadDocument`). A customer assigned to nobody is invisible to every
+agent — assigning them is the step that puts their documents into a review queue.
+
+The manager cells read `✓` rather than `asg (team)` deliberately. **There is no team concept
+anywhere in the schema** — no `manager_id` on `users`, no teams table, no branch or region column —
+so narrowing a manager would have required inventing one. Managers therefore keep organisation-wide
+visibility, and a genuine team boundary is open work that needs a client answer first (it overlaps
+the unanswered `docs/client-decisions.md` question "Can agents see only assigned customers, or all
+customers in a branch/team?"). Recorded in `docs/decision-log.md` for 2026-10-14.
 
 ---
 

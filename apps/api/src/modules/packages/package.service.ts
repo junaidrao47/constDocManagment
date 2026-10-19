@@ -1,3 +1,4 @@
+import { In } from "typeorm";
 import { AppDataSource } from "../../config/database";
 import { ServiceEntity } from "../../entities/service.entity";
 import { SubscriptionEntity } from "../subscriptions/subscription.entity";
@@ -19,6 +20,10 @@ function serializePackage(pkg: PackageEntity) {
     type: pkg.type,
     price: Number(pkg.price),
     durationDays: pkg.durationDays,
+    description: pkg.description ?? null,
+    isActive: pkg.isActive,
+    isFeatured: pkg.isFeatured,
+    sortOrder: pkg.sortOrder,
     services: (pkg.services ?? []).map((service) => ({ id: service.id, name: service.name, description: service.description ?? null, basePrice: Number(service.basePrice) })),
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
@@ -35,20 +40,34 @@ async function resolveServices(serviceIds: string[]) {
   const uniqueIds = [...new Set(serviceIds)];
   if (uniqueIds.length !== serviceIds.length) throw new HttpError(400, "serviceIds must be unique");
   if (uniqueIds.length === 0) return [];
-  const services = await AppDataSource.getRepository(ServiceEntity).findByIds(uniqueIds);
+  // find({ id: In(...) }) rather than the deprecated findByIds, which TypeORM 0.3
+  // marks for removal and which no repository contract outside TypeORM implements.
+  const services = await AppDataSource.getRepository(ServiceEntity).find({ where: { id: In(uniqueIds) } });
   const activeServices = services.filter((service) => service.isActive);
   if (activeServices.length !== uniqueIds.length) throw new HttpError(400, "One or more selected services are unavailable");
   return activeServices;
 }
 
 export const packageService = {
+  /**
+   * Every package, active or retired, in the same order the public list uses.
+   *
+   * Deliberately unfiltered: an admin has to be able to see what they have
+   * retired in order to bring it back.
+   */
   async list() {
-    const packages = await AppDataSource.getRepository(PackageEntity).find({ relations: { services: true }, order: { name: "ASC" } });
+    const packages = await AppDataSource.getRepository(PackageEntity).find({
+      relations: { services: true },
+      order: { isFeatured: "DESC", sortOrder: "ASC", name: "ASC" },
+    });
     return packages.map(serializePackage);
   },
   async get(id: string) { return serializePackage(await findPackageOr404(id)); },
   async create(input: PackageInput) {
-    const pkg = AppDataSource.getRepository(PackageEntity).create({ ...input, price: input.price.toFixed(2), services: await resolveServices(input.serviceIds) });
+    // isActive is set here rather than left to the column default. A new package
+    // is active by definition, and stating it means the created row does not
+    // depend on which layer fills the default in.
+    const pkg = AppDataSource.getRepository(PackageEntity).create({ ...input, price: input.price.toFixed(2), isActive: true, services: await resolveServices(input.serviceIds) });
     const saved = await AppDataSource.getRepository(PackageEntity).save(pkg);
     return this.get(saved.id);
   },

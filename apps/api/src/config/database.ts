@@ -1,6 +1,7 @@
 import path from "path";
 import { DataSource } from "typeorm";
 import {
+  AgentCustomerAssignmentEntity,
   AppSettingEntity,
   DocumentEntity,
   DocumentStatusHistoryEntity,
@@ -58,6 +59,7 @@ export const AppDataSource = new DataSource({
     InvoiceEntity,
     PaymentEntity,
     NotificationLogEntity,
+    AgentCustomerAssignmentEntity,
     CatalogCategoryEntity,
     CatalogItemEntity,
     CatalogFieldEntity,

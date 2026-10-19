@@ -3,10 +3,10 @@ import { HttpError } from "../../utils/http-error";
 import { successResponse } from "../../utils/response";
 import { customerService } from "./customer.service";
 import { quotationService } from "../quotations/quotation.service";
-import { QuotationIdParamSchema, QuotationRejectSchema, QuotationSchema } from "../quotations/quotation.schema";
+import { QuotationIdParamSchema, QuotationListQuerySchema, QuotationRejectSchema, QuotationSchema, type QuotationListQuery } from "../quotations/quotation.schema";
 import { invoiceService } from "../payments/invoice.service";
 import { InvoiceIdParamSchema } from "../payments/invoice.schema";
-import { validate, validateParams } from "../../middleware/validate";
+import { validate, validateParams, validateQuery } from "../../middleware/validate";
 
 export const customerRouter = Router();
 
@@ -83,7 +83,7 @@ customerRouter.get(
   }),
 );
 
-customerRouter.get("/me/quotations", sendAsync((req) => quotationService.list({ id: req.user!.id, role: req.user!.role })));
+customerRouter.get("/me/quotations", validateQuery(QuotationListQuerySchema), sendAsync((req) => quotationService.list({ id: req.user!.id, role: req.user!.role }, req.query as unknown as QuotationListQuery)));
 customerRouter.get("/me/quotations/:id", validateParams(QuotationIdParamSchema), sendAsync((req) => quotationService.get(req.params.id, { id: req.user!.id, role: req.user!.role })));
 customerRouter.post("/me/quotations", validate(QuotationSchema), sendAsync((req) => quotationService.create(req.user!.id, req.body)));
 customerRouter.post("/me/quotations/:id/accept", validateParams(QuotationIdParamSchema), sendAsync((req) => quotationService.transition(req.params.id, "accepted", { id: req.user!.id, role: req.user!.role })));

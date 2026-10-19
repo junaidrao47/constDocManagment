@@ -2,7 +2,7 @@ import crypto from "crypto";
 import request from "supertest";
 import { DocumentStatus } from "../src/modules/documents/document-status";
 import { UserRole } from "../src/modules/users/user.entity";
-import { bearer, fakeDb, mintToken, resetTestState, seedDocument, seedUser, testApp } from "./support/harness";
+import { bearer, fakeDb, mintToken, resetTestState, seedAssignment, seedDocument, seedUser, testApp } from "./support/harness";
 
 beforeEach(() => resetTestState());
 
@@ -49,6 +49,7 @@ describe("customer and staff portal endpoints", () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id, DocumentStatus.UnderReview);
+    seedAssignment(agent.id, customer.id);
 
     const dashboard = await request(testApp())
       .get("/api/customers/me/dashboard")

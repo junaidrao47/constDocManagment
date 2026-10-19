@@ -11,6 +11,7 @@ import { PackageEntity } from "../../src/modules/packages/package.entity";
 import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
 import { QuotationItemEntity } from "../../src/entities/quotation-item.entity";
 import { AppSettingEntity } from "../../src/entities/app-setting.entity";
+import { AgentCustomerAssignmentEntity } from "../../src/entities/agent-customer-assignment.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -48,6 +49,14 @@ export const AppDataSource = {
     }
 
     const created = new FakeRepository<Record<string, unknown>>(labelFor(target));
+    if (target === DocumentStatusHistoryEntity) {
+      // Mirrors TypeORM `relations: { changedByUser: true }` and hydrates the full
+      // user row, secrets included. A service that forgets toPublicUser() then
+      // fails its test rather than passing against a conveniently thin fake.
+      created.defineRelation("changedByUser", (row) =>
+        AppDataSource.getRepository(UserEntity).all().find((user) => user.id === row.changedBy),
+      );
+    }
     if (target === QuotationEntity) {
       // Mirrors TypeORM `relations: { customer: true }`: the full user row, secrets
       // included, exactly what a service would receive from Postgres.
@@ -120,6 +129,7 @@ export const fakeDb = {
   quotations: () => AppDataSource.getRepository(QuotationEntity),
   quotationItems: () => AppDataSource.getRepository(QuotationItemEntity),
   appSettings: () => AppDataSource.getRepository(AppSettingEntity),
+  assignments: () => AppDataSource.getRepository(AgentCustomerAssignmentEntity),
 };
 
 export function resetFakeDatabase(): void {

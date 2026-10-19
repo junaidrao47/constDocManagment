@@ -5,6 +5,7 @@ import {
   bearer,
   mintToken,
   resetTestState,
+  seedAssignment,
   seedDocument,
   seedUser,
   testApp,
@@ -35,6 +36,9 @@ describe("document access for the people who review documents", () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id);
+    // Reviewers are scoped to their assigned customers, so the assignment is part
+    // of the fixture for "an agent doing the job the role exists for".
+    seedAssignment(agent.id, customer.id);
     writeLocalDocument(document.s3Key, DOCUMENT_BODY);
 
     const detail = await request(testApp())
@@ -100,6 +104,7 @@ describe("document access for the people who review documents", () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id);
+    seedAssignment(agent.id, customer.id);
 
     const approved = await request(testApp())
       .post(`/api/documents/${document.id}/approved-upload`)
@@ -155,6 +160,7 @@ describe("withdrawing access takes effect immediately", () => {
     const agent = await seedUser({ role: UserRole.Agent });
     const customer = await seedUser({ role: UserRole.Customer });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
+    seedAssignment(agent.id, customer.id);
 
     // Issued five seconds ago so the comparison against the cut-off is unambiguous;
     // `iat` has one-second resolution and the whole test runs inside one second.
@@ -255,6 +261,7 @@ describe("the admin and agent boundary", () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
+    seedAssignment(agent.id, customer.id);
 
     const moved = await request(testApp())
       .patch(`/api/documents/${document.id}/status`)
@@ -269,6 +276,9 @@ describe("the admin and agent boundary", () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
     const document = seedDocument(customer.id, DocumentStatus.Pending);
+    // Assigned on purpose: this asserts the transition guard, and authorisation now
+    // runs first, so an unassigned agent would get 403 before reaching the 409.
+    seedAssignment(agent.id, customer.id);
 
     const illegal = await request(testApp())
       .patch(`/api/documents/${document.id}/status`)

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./apps/api/.env)",
+      "Read(./apps/worker/.env)",
+      "Edit(./.env)",
+      "Write(./.env)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(gh:*)",
+      "Bash(cat .env:*)",
+      "Bash(curl:*)",
+      "Read(../admin-frontend/**)",
+      "Read(../customer-portal/**)",
+      "Edit(./.github/**)",
+      "Edit(./nginx/**)",
+      "Edit(./docker/**)",
+      "Edit(./compose.yml)",
+      "Edit(./compose.prod.yml)",
+      "Edit(./package.json)",
+      "Edit(./apps/api/package.json)",
+      "Edit(./apps/worker/package.json)",
+      "Edit(./AGENT.md)",
+      "Edit(./CLAUDE.md)"
+    ]
+  }
+}

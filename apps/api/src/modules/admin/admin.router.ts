@@ -7,7 +7,7 @@ import { ListUsersQuerySchema, SetUserStatusSchema, UserIdParamSchema } from "./
 import { AdminEmailSchema } from "./admin-email.schema";
 import { sendEmail } from "../../utils/email";
 import { quotationService } from "../quotations/quotation.service";
-import { QuotationIdParamSchema, QuotationStatusSchema, StaffQuotationCreateSchema } from "../quotations/quotation.schema";
+import { QuotationIdParamSchema, QuotationListQuerySchema, QuotationStatusSchema, StaffQuotationCreateSchema, type QuotationListQuery } from "../quotations/quotation.schema";
 import { PackageIdParamSchema, PackageSchema } from "../packages/package.schema";
 import { packageService } from "../packages/package.service";
 import { adminPricingService } from "./admin-pricing.service";
@@ -105,7 +105,7 @@ adminRouter.post(
 
 // ─── Quotations ───────────────────────────────────────────────────────────────
 
-adminRouter.get("/quotations", send((req) => quotationService.list({ id: actorId(req), role: req.user!.role })));
+adminRouter.get("/quotations", validateQuery(QuotationListQuerySchema), send((req) => quotationService.list({ id: actorId(req), role: req.user!.role }, req.query as unknown as QuotationListQuery)));
 adminRouter.post("/quotations", validate(StaffQuotationCreateSchema), send((req) => quotationService.staffCreate(req.body, { id: actorId(req), role: req.user!.role }), 201));
 adminRouter.get("/quotations/:id", validateParams(QuotationIdParamSchema), send((req) => quotationService.get(req.params.id, { id: actorId(req), role: req.user!.role })));
 adminRouter.patch("/quotations/:id/status", validateParams(QuotationIdParamSchema), validate(QuotationStatusSchema), send((req) => quotationService.transition(req.params.id, req.body.status, { id: actorId(req), role: req.user!.role }, req.body.note)));

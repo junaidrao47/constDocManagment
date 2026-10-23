@@ -3,13 +3,19 @@ import { AppDataSource } from "../../config/database";
 import { ServiceEntity } from "../../entities/service.entity";
 import { SubscriptionEntity } from "../subscriptions/subscription.entity";
 import { HttpError } from "../../utils/http-error";
+import { categoryService } from "../categories/category.service";
 import { PackageEntity } from "./package.entity";
 
 export interface PackageInput {
   name: string;
+  nameEn: string;
+  nameEs?: string;
+  descriptionEn?: string | null;
+  descriptionEs?: string | null;
   type: string;
   price: number;
   durationDays: number;
+  categoryId: string;
   serviceIds: string[];
   description?: string | null;
   sortOrder: number;
@@ -20,6 +26,10 @@ function serializePackage(pkg: PackageEntity) {
   return {
     id: pkg.id,
     name: pkg.name,
+    nameEn: pkg.nameEn,
+    nameEs: pkg.nameEs,
+    descriptionEn: pkg.descriptionEn ?? null,
+    descriptionEs: pkg.descriptionEs ?? null,
     type: pkg.type,
     price: Number(pkg.price),
     durationDays: pkg.durationDays,
@@ -27,6 +37,7 @@ function serializePackage(pkg: PackageEntity) {
     isActive: pkg.isActive,
     isFeatured: pkg.isFeatured,
     sortOrder: pkg.sortOrder,
+    categoryId: pkg.categoryId,
     services: (pkg.services ?? []).map((service) => ({ id: service.id, name: service.name, description: service.description ?? null, basePrice: Number(service.basePrice) })),
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
@@ -67,24 +78,46 @@ export const packageService = {
   },
   async get(id: string) { return serializePackage(await findPackageOr404(id)); },
   async create(input: PackageInput) {
+    await categoryService.assertActiveCategory(input.categoryId);
     // isActive is set here rather than left to the column default. A new package
     // is active by definition, and stating it means the created row does not
     // depend on which layer fills the default in.
-    const pkg = AppDataSource.getRepository(PackageEntity).create({ ...input, price: input.price.toFixed(2), isActive: true, services: await resolveServices(input.serviceIds) });
+    const pkg = AppDataSource.getRepository(PackageEntity).create({
+      name: input.name,
+      nameEn: input.nameEn,
+      nameEs: input.nameEs ?? input.nameEn,
+      descriptionEn: input.descriptionEn ?? null,
+      descriptionEs: input.descriptionEs ?? input.descriptionEn ?? null,
+      type: input.type,
+      price: input.price.toFixed(2),
+      durationDays: input.durationDays,
+      categoryId: input.categoryId,
+      description: input.description ?? null,
+      sortOrder: input.sortOrder,
+      isFeatured: input.isFeatured,
+      isActive: true,
+      services: await resolveServices(input.serviceIds),
+    });
     const saved = await AppDataSource.getRepository(PackageEntity).save(pkg);
     return this.get(saved.id);
   },
   async update(id: string, input: PackageInput) {
     const repository = AppDataSource.getRepository(PackageEntity);
     const pkg = await findPackageOr404(id);
+    await categoryService.assertActiveCategory(input.categoryId);
     // description, sortOrder and isFeatured are assigned here too: create persists them
     // via its spread, but leaving them out of this list meant an edit silently dropped
     // them while the schema still accepted them. isActive stays out — see setStatus.
     Object.assign(pkg, {
       name: input.name,
+      nameEn: input.nameEn,
+      nameEs: input.nameEs ?? input.nameEn,
+      descriptionEn: input.descriptionEn ?? null,
+      descriptionEs: input.descriptionEs ?? input.descriptionEn ?? null,
       type: input.type,
       price: input.price.toFixed(2),
       durationDays: input.durationDays,
+      categoryId: input.categoryId,
       description: input.description ?? null,
       sortOrder: input.sortOrder,
       isFeatured: input.isFeatured,

@@ -17,3 +17,6 @@ export * from "./notification-log.entity";
 export * from "./quotation-status-history.entity";
 export * from "./app-setting.entity";
 export * from "./agent-customer-assignment.entity";
+export * from "../modules/categories/category.entity";
+export * from "../modules/documents/document-version.entity";
+export * from "../modules/documents/service-required-document.entity";

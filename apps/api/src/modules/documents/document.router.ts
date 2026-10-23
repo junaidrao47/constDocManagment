@@ -3,140 +3,173 @@ import multer from "multer";
 import path from "path";
 import { authorize, STAFF_ROLES } from "../../middleware/authorize";
 import { validate, validateParams } from "../../middleware/validate";
-import { HttpError } from "../../utils/http-error";
+import { AppError, HttpError } from "../../utils/http-error";
 import { UserRole } from "../users/user.entity";
 import {
   CreateDocumentUploadSchema,
+  CreateVersionIntentSchema,
   DocumentIdParamSchema,
   UpdateDocumentStatusSchema,
+  VersionIdParamSchema,
 } from "./document.schema";
 import { DocumentActor, documentService } from "./document.service";
+import { ALLOWED_EXTENSIONS, ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "./upload-constraints";
 import { successResponse } from "../../utils/response";
 import { getDownloadUrl, getLocalDocumentPath } from "../../utils/s3";
 
 /**
- * Document routes.
- *
- * `authenticate` is applied once at the mount point in app.ts, so it is not
- * repeated here. What each route adds is the role gate — and the important change
- * is that reads are open to staff. Every read was previously `authorize("customer")`,
- * which meant an agent or manager could not open a document they were assigned to
- * approve. Ownership is still enforced inside the service, per document.
+ * Document routes. `authenticate` is applied once at the mount point in app.ts.
+ * Reads are open to staff; ownership/assignment is enforced per document in the service.
  */
 export const documentRouter = Router();
 
 /** Read access: the owning customer, or any staff member. */
 const READ_ROLES = [UserRole.Customer, ...STAFF_ROLES];
-
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-
-/**
- * Accepted upload types.
- *
- * Compliance documents are PDFs, office files, and photographs of certificates.
- * The previous configuration limited size only, so an HTML or SVG file could be
- * stored and later served from our own origin — which is how a stored XSS gets
- * into a portal that previews uploads.
- *
- * Both the reported MIME type and the file extension must be on the list. A client
- * controls both, so this is not proof of content; it is the cheap check. Real
- * content sniffing belongs with the antivirus/validation job in Phase 2.
- */
-const ALLOWED_UPLOAD_TYPES: Record<string, readonly string[]> = {
-  "application/pdf": [".pdf"],
-  "image/jpeg": [".jpg", ".jpeg"],
-  "image/png": [".png"],
-  "image/webp": [".webp"],
-  "image/tiff": [".tif", ".tiff"],
-  "application/msword": [".doc"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-  "application/vnd.ms-excel": [".xls"],
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-};
-
-const ALLOWED_EXTENSIONS = Object.values(ALLOWED_UPLOAD_TYPES).flat();
+/** Who may create document versions: the owning customer, or staff on their behalf. */
+const UPLOAD_ROLES = [UserRole.Customer, ...STAFF_ROLES];
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
   fileFilter: (_req, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase();
-    const permittedExtensions = ALLOWED_UPLOAD_TYPES[file.mimetype];
-
-    if (!permittedExtensions || !permittedExtensions.includes(extension)) {
-      callback(
-        new HttpError(
-          415,
-          `Unsupported file type. Allowed extensions: ${ALLOWED_EXTENSIONS.join(", ")}`,
-        ),
-      );
+    const permitted = ALLOWED_UPLOAD_TYPES[file.mimetype];
+    if (!permitted || !permitted.includes(extension)) {
+      callback(new AppError("FILE_TYPE_NOT_ALLOWED", 415, `Unsupported file type. Allowed extensions: ${ALLOWED_EXTENSIONS.join(", ")}`));
       return;
     }
-
     callback(null, true);
   },
 });
 
-/** Turns multer's own errors into the API's error shape instead of a 500. */
 function handleUpload(field: string) {
   const middleware = upload.single(field);
-
   return (req: Request, res: Response, next: NextFunction): void => {
     middleware(req, res, (error: unknown) => {
-      if (!error) {
-        next();
-        return;
-      }
-
+      if (!error) return next();
       if (error instanceof multer.MulterError) {
-        const status = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
-        const message =
-          error.code === "LIMIT_FILE_SIZE"
-            ? `File exceeds the ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit`
-            : error.message;
-
-        next(new HttpError(status, message));
+        if (error.code === "LIMIT_FILE_SIZE") {
+          next(new AppError("FILE_TOO_LARGE", 413, `File exceeds the ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit`));
+        } else {
+          next(new AppError("BAD_REQUEST", 400, error.message));
+        }
         return;
       }
-
       next(error);
     });
   };
 }
 
-function sendAsync<T>(handler: (req: Request) => Promise<T>) {
+function sendAsync<T>(handler: (req: Request) => Promise<T>, status = 200) {
   return (req: Request, res: Response, next: NextFunction) => {
-    handler(req).then((data) => res.json(successResponse(data))).catch(next);
+    handler(req).then((data) => res.status(status).json(successResponse(data))).catch(next);
   };
 }
 
-/** `authenticate` guarantees `req.user`; this converts that into something typed. */
 function actor(req: Request): DocumentActor {
-  if (!req.user) {
-    throw new HttpError(401, "Unauthorized");
-  }
-
+  if (!req.user) throw new HttpError(401, "Unauthorized");
   return { id: req.user.id, role: req.user.role };
 }
 
+// ── Status contract (any authenticated role) ────────────────────────────────────
+documentRouter.get("/statuses", sendAsync(async () => documentService.getStatusContract()));
+
+// ── Upload pipeline ─────────────────────────────────────────────────────────────
 documentRouter.post(
   "/upload-url",
-  authorize(UserRole.Customer),
+  authorize(...UPLOAD_ROLES),
   validate(CreateDocumentUploadSchema),
-  sendAsync((req) => documentService.createUploadTarget(actor(req).id, req.body)),
+  sendAsync((req) => documentService.createUploadTarget(actor(req), req.body), 201),
 );
 
 documentRouter.post(
+  "/:id/versions/upload-intent",
+  authorize(...UPLOAD_ROLES),
+  validateParams(DocumentIdParamSchema),
+  validate(CreateVersionIntentSchema),
+  sendAsync((req) => documentService.createVersionIntent(actor(req), req.params.id, req.body), 201),
+);
+
+documentRouter.post(
+  "/:id/versions/:versionId/upload",
+  authorize(...UPLOAD_ROLES),
+  validateParams(VersionIdParamSchema),
+  handleUpload("file"),
+  sendAsync(async (req) => {
+    if (!req.file) throw new HttpError(400, "file is required");
+    return documentService.uploadVersionBytes(actor(req), req.params.id, req.params.versionId, {
+      buffer: req.file.buffer,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+  }),
+);
+
+documentRouter.post(
+  "/:id/versions/:versionId/confirm",
+  authorize(...UPLOAD_ROLES),
+  validateParams(VersionIdParamSchema),
+  sendAsync((req) => documentService.confirmVersion(actor(req), req.params.id, req.params.versionId)),
+);
+
+documentRouter.get(
+  "/:id/versions",
+  authorize(...READ_ROLES),
+  validateParams(DocumentIdParamSchema),
+  sendAsync((req) => documentService.listVersions(actor(req), req.params.id)),
+);
+
+documentRouter.get(
+  "/:id/versions/:versionId/download-url",
+  authorize(...READ_ROLES),
+  validateParams(VersionIdParamSchema),
+  sendAsync((req) => documentService.getVersionDownloadTarget(actor(req), req.params.id, req.params.versionId)),
+);
+
+documentRouter.get(
+  "/:id/versions/:versionId/preview-url",
+  authorize(...READ_ROLES),
+  validateParams(VersionIdParamSchema),
+  sendAsync((req) => documentService.getVersionDownloadTarget(actor(req), req.params.id, req.params.versionId, { inline: true })),
+);
+
+documentRouter.get(
+  "/:id/versions/:versionId/download",
+  authorize(...READ_ROLES),
+  validateParams(VersionIdParamSchema),
+  async (req, res, next) => {
+    try {
+      const version = await documentService.getVersionForDownload(actor(req), req.params.id, req.params.versionId);
+      const inline = req.query.inline === "1";
+      const disposition = inline ? "inline" : "attachment";
+      const signedUrl = await getDownloadUrl({
+        key: version.storageKey,
+        responseContentDisposition: `${disposition}; filename="${version.fileName}"`,
+        responseContentType: version.mimeType ?? undefined,
+      });
+      if (signedUrl) return res.redirect(signedUrl);
+      if (inline) {
+        res.setHeader("Content-Disposition", `inline; filename="${version.fileName}"`);
+        res.sendFile(getLocalDocumentPath(version.storageKey));
+        return;
+      }
+      res.download(getLocalDocumentPath(version.storageKey), version.fileName);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ── Single-call convenience uploads (bytes held by the API) ──────────────────────
+documentRouter.post(
   "/:id/upload",
-  authorize(UserRole.Customer),
+  authorize(...UPLOAD_ROLES),
   validateParams(DocumentIdParamSchema),
   handleUpload("file"),
   sendAsync(async (req) => {
-    if (!req.file) {
-      throw new HttpError(400, "file is required");
-    }
-
-    return documentService.uploadLocalDocument(actor(req), req.params.id, {
+    if (!req.file) throw new HttpError(400, "file is required");
+    return documentService.uploadCustomerVersion(actor(req), req.params.id, {
       buffer: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -151,11 +184,8 @@ documentRouter.post(
   validateParams(DocumentIdParamSchema),
   handleUpload("file"),
   sendAsync(async (req) => {
-    if (!req.file) {
-      throw new HttpError(400, "file is required");
-    }
-
-    return documentService.uploadApprovedDocument(actor(req), req.params.id, {
+    if (!req.file) throw new HttpError(400, "file is required");
+    return documentService.uploadOfficialVersion(actor(req), req.params.id, {
       buffer: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -164,33 +194,11 @@ documentRouter.post(
   }),
 );
 
-documentRouter.get(
-  "/:id",
-  authorize(...READ_ROLES),
-  validateParams(DocumentIdParamSchema),
-  sendAsync((req) => documentService.getDocument(actor(req), req.params.id)),
-);
-
-documentRouter.get(
-  "/:id/history",
-  authorize(...READ_ROLES),
-  validateParams(DocumentIdParamSchema),
-  sendAsync((req) => documentService.history(actor(req), req.params.id)),
-);
-
-documentRouter.get(
-  "/:id/download-url",
-  authorize(...READ_ROLES),
-  validateParams(DocumentIdParamSchema),
-  sendAsync((req) => documentService.getDocumentDownloadTarget(actor(req), req.params.id)),
-);
-
-documentRouter.get(
-  "/:id/approved-download-url",
-  authorize(...READ_ROLES),
-  validateParams(DocumentIdParamSchema),
-  sendAsync((req) => documentService.getApprovedDocumentDownloadTarget(actor(req), req.params.id)),
-);
+// ── Reads ────────────────────────────────────────────────────────────────────────
+documentRouter.get("/:id", authorize(...READ_ROLES), validateParams(DocumentIdParamSchema), sendAsync((req) => documentService.getDocument(actor(req), req.params.id)));
+documentRouter.get("/:id/history", authorize(...READ_ROLES), validateParams(DocumentIdParamSchema), sendAsync((req) => documentService.history(actor(req), req.params.id)));
+documentRouter.get("/:id/download-url", authorize(...READ_ROLES), validateParams(DocumentIdParamSchema), sendAsync((req) => documentService.getDocumentDownloadTarget(actor(req), req.params.id)));
+documentRouter.get("/:id/approved-download-url", authorize(...READ_ROLES), validateParams(DocumentIdParamSchema), sendAsync((req) => documentService.getApprovedDocumentDownloadTarget(actor(req), req.params.id)));
 
 documentRouter.get(
   "/:id/download",
@@ -199,39 +207,22 @@ documentRouter.get(
   async (req, res, next) => {
     try {
       const document = await documentService.getDocumentLocalPath(actor(req), req.params.id);
-      if (req.query.version === "approved") {
-        if (!document.approvedS3Key) {
-          throw new HttpError(404, "Approved document version not found");
-        }
-
-        const signedUrl = await getDownloadUrl({ key: document.approvedS3Key });
-
-        if (signedUrl) {
-          res.redirect(signedUrl);
-          return;
-        }
-
-        res.download(getLocalDocumentPath(document.approvedS3Key), document.approvedFileName ?? document.fileName);
-        return;
-      }
-
-      const signedUrl = await getDownloadUrl({ key: document.s3Key });
-
-      if (signedUrl) {
-        res.redirect(signedUrl);
-        return;
-      }
-
-      res.download(getLocalDocumentPath(document.s3Key), document.fileName);
+      const approved = req.query.version === "approved";
+      const key = approved ? document.approvedS3Key : document.s3Key;
+      const name = approved ? document.approvedFileName ?? document.fileName : document.fileName;
+      if (approved && !document.approvedS3Key) throw new HttpError(404, "Approved document version not found");
+      const signedUrl = await getDownloadUrl({ key: key!, responseContentDisposition: `attachment; filename="${name}"` });
+      if (signedUrl) return res.redirect(signedUrl);
+      res.download(getLocalDocumentPath(key!), name);
     } catch (error) {
       next(error);
     }
   },
 );
 
+// ── Status transition ──────────────────────────────────────────────────────────
 documentRouter.patch(
   "/:id/status",
-  // Agents and managers approve documents; admin keeps the override.
   authorize(UserRole.Agent, UserRole.Manager, UserRole.Admin),
   validateParams(DocumentIdParamSchema),
   validate(UpdateDocumentStatusSchema),

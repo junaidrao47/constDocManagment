@@ -12,8 +12,23 @@ export const DocumentSchema = z.object({
 
 export const CreateDocumentUploadSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
-  contentType: z.string().trim().min(1).max(200).optional(),
+  contentType: z.string().trim().min(1).max(200),
   serviceId: z.string().uuid().optional(),
+  requirementId: z.string().uuid().optional(),
+  // Staff only: upload a new document on behalf of this customer.
+  customerId: z.string().uuid().optional(),
+});
+
+export const CreateVersionIntentSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().min(1).max(200),
+  // Staff may choose the kind; a customer's kind is always 'customer' (ignored here).
+  kind: z.enum(["staff_on_behalf", "official"]).optional(),
+});
+
+export const VersionIdParamSchema = z.object({
+  id: z.string().uuid("must be a valid document id"),
+  versionId: z.string().uuid("must be a valid version id"),
 });
 
 const documentStatusUpdateShape = {

@@ -6,6 +6,8 @@ import { quotationService } from "../quotations/quotation.service";
 import { QuotationIdParamSchema, QuotationListQuerySchema, QuotationRejectSchema, QuotationSchema, type QuotationListQuery } from "../quotations/quotation.schema";
 import { invoiceService } from "../payments/invoice.service";
 import { InvoiceIdParamSchema } from "../payments/invoice.schema";
+import { documentService } from "../documents/document.service";
+import { localeFromRequest } from "../../utils/i18n";
 import { validate, validateParams, validateQuery } from "../../middleware/validate";
 
 export const customerRouter = Router();
@@ -46,6 +48,17 @@ customerRouter.get(
     }
 
     return customerService.getMyDocuments(req.user.id);
+  }),
+);
+
+customerRouter.get(
+  "/me/checklist",
+  sendAsync((req) => {
+    if (!req.user) {
+      throw new HttpError(401, "Authenticated user is required");
+    }
+
+    return documentService.getChecklist(req.user.id, localeFromRequest(req));
   }),
 );
 

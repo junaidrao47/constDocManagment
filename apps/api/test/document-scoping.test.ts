@@ -175,15 +175,20 @@ describe("an agent can do their job for an assigned customer", () => {
 
   it("uploads an approved version for an assigned customer", async () => {
     const { assignedCustomer, token } = await twoCustomers();
-    const document = seedDocument(assignedCustomer.id);
+    // An official file can only be uploaded once the document has been taken to the
+    // government, so the fixture starts it there (the former jump-straight-to-approved
+    // path was the audited R56 defect).
+    const document = seedDocument(assignedCustomer.id, DocumentStatus.SubmittedToGovernment);
 
     const approved = await request(testApp())
       .post(`/api/documents/${document.id}/approved-upload`)
       .set("Authorization", token)
-      .attach("file", Buffer.from("approved certificate"), "approved.pdf");
+      // Real PDF bytes: the confirm step sniffs the magic bytes against the declared type.
+      .attach("file", Buffer.from("%PDF-1.4\napproved certificate\n%%EOF"), "approved.pdf");
 
     expect(approved.status).toBe(200);
     expect(approved.body.data.approvedFileName).toBe("approved.pdf");
+    expect(approved.body.data.status).toBe(DocumentStatus.Approved);
   });
 });
 

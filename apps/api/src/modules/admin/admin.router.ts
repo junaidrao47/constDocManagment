@@ -15,6 +15,13 @@ import { invoiceService } from "../payments/invoice.service";
 import { InvoiceIdParamSchema, InvoiceListQuerySchema, PaymentCreateSchema } from "../payments/invoice.schema";
 import { DocumentIdParamSchema, AdminDocumentListQuerySchema, AdminUpdateDocumentStatusSchema } from "../documents/document.schema";
 import { documentService } from "../documents/document.service";
+import { requirementService } from "../documents/requirement.service";
+import {
+  RequirementCreateSchema,
+  RequirementUpdateSchema,
+  RequirementIdParamSchema,
+  ServiceIdParamSchema,
+} from "../documents/requirement.schema";
 import {
   IndustryCreateSchema,
   IndustryUpdateSchema,
@@ -257,6 +264,36 @@ adminRouter.put(
   },
   validate(SettingUpdateSchema),
   send((req) => adminPricingService.updateSetting(req.params.key, req.body.value, actorId(req))),
+);
+
+// ─── Required-documents checklist (per service) ───────────────────────────────
+
+adminRouter.get(
+  "/services/:serviceId/requirements",
+  validateParams(ServiceIdParamSchema),
+  send((req) => requirementService.listForService(req.params.serviceId)),
+);
+adminRouter.post(
+  "/services/:serviceId/requirements",
+  validateParams(ServiceIdParamSchema),
+  validate(RequirementCreateSchema),
+  send((req) => requirementService.create(req.params.serviceId, req.body), 201),
+);
+adminRouter.get(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  send((req) => requirementService.get(req.params.id)),
+);
+adminRouter.patch(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  validate(RequirementUpdateSchema),
+  send((req) => requirementService.update(req.params.id, req.body)),
+);
+adminRouter.delete(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  send((req) => requirementService.remove(req.params.id)),
 );
 
 // ─── Placeholders ───────────────────────────────────────────────────────────

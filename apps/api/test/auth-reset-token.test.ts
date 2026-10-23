@@ -90,7 +90,7 @@ describe("password reset tokens", () => {
       .send({ token: accessToken, newPassword: "BrandNewPass1" });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toBe("Reset token is invalid or has expired");
+    expect(response.body.error.message).toBe("Reset token is invalid or has expired");
   });
 
   it("refuses a token that carries no purpose claim", async () => {

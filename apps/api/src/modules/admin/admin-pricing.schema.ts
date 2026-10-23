@@ -4,15 +4,27 @@ import { z } from "zod";
 
 export const ServiceCreateSchema = z.object({
   name: z.string().trim().min(1).max(150),
+  // Bilingual display copy. nameEn is required; nameEs defaults to nameEn in the
+  // service layer when omitted (same rule the migration backfill uses).
+  nameEn: z.string().trim().min(1).max(150),
+  nameEs: z.string().trim().min(1).max(150).optional(),
+  descriptionEn: z.string().trim().max(2000).nullable().optional(),
+  descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99),
+  categoryId: z.string().uuid(),
   isActive: z.boolean().optional().default(true),
 });
 
 export const ServiceUpdateSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
+  nameEn: z.string().trim().min(1).max(150).optional(),
+  nameEs: z.string().trim().min(1).max(150).optional(),
+  descriptionEn: z.string().trim().max(2000).nullable().optional(),
+  descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99).optional(),
+  categoryId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
 });
 

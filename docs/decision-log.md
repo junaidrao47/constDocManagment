@@ -637,3 +637,135 @@ persisted them via its spread, hiding the asymmetry).
   retire→public-hidden→restore→public-visible toggle. No migration: `is_active`, `description`,
   `sort_order` and `is_featured` already exist on the entity and in `1840000000000-PackageVisibility`.
 - Not yet exercised by `npm run smoke` (not run in this environment); verify there before release.
+
+## 2026-10-20
+
+### Decision
+One error-and-tracing contract for the whole API. Every non-2xx response is the envelope
+`{ success:false, error:{ code, message, details?, requestId } }`, with a stable string
+`code`, an English developer-facing `message`, Zod per-field `details`, and a `requestId`.
+`AppError(code, httpStatus, message, details?)` is the canonical error type; `HttpError`
+is kept as a subclass whose code is derived from the HTTP status.
+
+### Why
+- Failures left the API in at least five shapes, several bypassing the central handler
+  (`validate`, `authenticate`, `authorize`, the two rate limiters, one agent route), and
+  unmatched `/api` routes returned Express's HTML 404. The HTTP status doubled as the only
+  machine-readable signal, so a frontend could not tell `DOCUMENT_LOCKED` from any other 409
+  and had no id to tie a user-facing failure to a server log.
+- Making `HttpError` a status-derived subclass of `AppError` is the lever that kept this to a
+  reviewable change: the ~115 existing `new HttpError(status, msg)` sites across 20 files
+  needed no edit and still emit sensible codes; only a handful of business sites were upgraded
+  to explicit codes (`INVALID_STATUS_TRANSITION`, `NOTE_REQUIRED`, `FILE_TOO_LARGE`,
+  `FILE_TYPE_NOT_ALLOWED`).
+- `requestId` is accepted from a sanitised inbound `x-request-id` (token-checked to stop log
+  forging) or generated, returned in the response header, and written on every error log line
+  and the morgan access log. Full per-line request context in services is deferred.
+- No business logic, status set, or schema changed. Messages stay English and dev-facing;
+  localisation is the frontend's job, keyed off `code` — a later i18n task.
+
+### Result
+- New: `middleware/request-id.ts`, `test/error-envelope.test.ts`, `docs/error-codes.md`.
+  Rewritten: `middleware/errorHandler.ts`, `utils/http-error.ts`. `validate`, `authenticate`,
+  `authorize`, `app.ts` (request-id mounted first, rate-limiter envelope handler, `/api` 404
+  catch-all) now route every failure through the one handler. Dead `errorResponse()` removed.
+- Stack traces and SQL never reach the body in any environment; the stack goes to the log
+  under the `requestId`.
+- Both frontend API clients (`admin-frontend`, `customer-portal` `src/lib/api.ts`) consume the
+  nested shape and expose `code`/`requestId` on `ApiError`; this was a breaking change to the
+  old `{ success:false, error:<string>, code:<number> }` shape, taken deliberately.
+- Verified: API `typecheck`/`typecheck:test` clean, Jest 19 suites / 204 tests green; both
+  frontends tsc + lint + vitest green. `npm run smoke` against Docker Postgres and the
+  `NODE_ENV=production` no-leak check are the remaining release gate.
+
+## 2026-10-20 — Category layer for services and packages
+
+### Decision
+A new `categories` table (flat, bilingual) that every service and every package must
+reference exactly once (PROJECT-BRIEF §10.1). `services.category_id` and `packages.category_id`
+are `NOT NULL`, FK `ON DELETE RESTRICT`. Admin creates a category before a service/package can
+reference it; the public site filters by category and shows it on each card.
+
+### Why
+- The brief requires it, and it is the taxonomy the public website's navigation/cards need.
+- It is kept **separate from the existing `catalog_categories`**, which is the generic,
+  hierarchical, single-language CMS taxonomy under `modules/catalog`. That one is a different
+  system (its own entities, routes, and no link to the real `services`/`packages`); conflating
+  them would have coupled the public catalogue to the CMS. The names are deliberately adjacent —
+  `categories` is the one services/packages key off.
+- Bilingual copy (`name_en`, `name_es`, `description_en`, `description_es`) was added to
+  `services` and `packages` at the same time (the brief, §1 and §7.1, requires bilingual
+  DB-managed content). The existing `name`/`description` columns were **kept** as the canonical,
+  unique admin key rather than replaced: `name`'s unique index, the `package_services` join and
+  quotation line-item labels all read `name`, so replacing it would have been a far larger,
+  riskier change for no functional gain. The public endpoints resolve `name`/`description` to one
+  language via `Accept-Language` (es-MX default, en fallback); admin responses expose both.
+
+### Result
+- New: `modules/categories/` (entity/schema/service/router), migration
+  `1860000000000-Categories`, `utils/i18n.ts`, `test/categories.test.ts`. Admin CRUD at
+  `/api/admin/categories` (list/get/create/update, `/reorder`, `/:id/status`, delete). Public
+  `GET /api/public/categories` (active + counts); `/public/services` and `/public/packages` take
+  `?category=<slug>` and embed the category object, localized.
+- Migration runs on a populated DB: it adds columns nullable, inserts a default **General**
+  category, backfills every existing row (`category_id` = General, `_en` from the current value,
+  `_es` from `_en`), then sets `NOT NULL`. Reversible. The services/packages statements are
+  written per table (not a loop) so the drift tooling can attribute each column to its table.
+- New error codes: `CATEGORY_NOT_FOUND` (400) and `CATEGORY_INACTIVE` (400) at the
+  service/package guard; `CATEGORY_NOT_EMPTY` (409) moved from reserved to active on category
+  delete. A duplicate slug is `CONFLICT`.
+- Seed now seeds categories and assigns them; the first demo service's unconditional create
+  (which broke a second `npm run db:seed`) was fixed to find-or-create, so the seed is idempotent.
+- Verified against real Postgres: migration applied on the existing seeded DB (12 services
+  backfilled, 0 null `category_id`), `npm run db:seed` twice both exit 0, `npm run smoke`
+  20 passed / 0 failed (adds a category step and a `?category` filter assertion), Jest 20 suites /
+  216 tests green, API + worker typecheck clean, and the drift extractor reports `categories` as a
+  tracked entity with no breaking finding (17 findings, the known-clean baseline composition).
+
+## 2026-10-23 — Document version pipeline, official files, required-documents checklist
+
+### Decision
+- The document workflow is **version-based**. A document owns many `document_versions`
+  (`kind`: `customer` | `staff_on_behalf` | `official`); `documents.current_version_id` points at
+  the latest ready customer/staff submission. Official (government-approved) files are their own
+  `official` rows and **never overwrite** a customer version, so the full submission history
+  survives (brief §7.5, §10.6).
+- Uploads are **two-step**: an *intent* is issued (`POST /documents/upload-url` for the first
+  version, `POST /documents/:id/versions/upload-intent` for later ones) returning a presigned S3
+  **POST** — `createPresignedPost` with `content-length-range` 1–25 MB and an exact `Content-Type`,
+  which a presigned PUT cannot enforce — or a local URL; the client then PUTs the bytes and calls
+  `confirm`, which HEADs the object, re-checks size + allow-list + **magic bytes**, and only then
+  marks the version ready, applies the role transition, writes history and queues the email, all in
+  one transaction. Unconfirmed intents expire after 15 min (`UPLOAD_EXPIRED`).
+- New status `submitted_to_government` (the single status change the client approved, 2026-10-16):
+  `approved → submitted_to_government`, and the official-file upload moves it back to `approved`.
+  Statuses and per-role transitions live only in `document-status.ts` and are served at
+  `GET /api/documents/statuses`; no frontend hardcodes them.
+- Upload is open to the **customer and staff** (agent/manager scoped to assigned customers);
+  staff may upload `staff_on_behalf` or `official`. A customer may add a version only while
+  `pending` or `rejected` (resubmission moves `rejected → pending`); otherwise `DOCUMENT_LOCKED`.
+  Entitlement is gated by `canUploadDocuments(...)` (returns `true` for now, brief §10.4).
+
+### Why
+- The 2026-10-19 audit found the core flow broken live at three points (R56/R57/R58/R61, S-2/S-9):
+  `approved-upload` bypassed the state machine, wrote no history/email, and wrote to local disk
+  while downloads presigned S3 (customer 404); the presigned upload accepted any type and size; a
+  customer could overwrite a file in any status. The version model + two-step confirm closes all of
+  them in one place and keeps history immutable.
+
+### Result
+- New: `document-version.entity.ts`, `service-required-document.entity.ts`, `requirement.service.ts`
+  / `requirement.schema.ts`, `entitlement.ts`, `upload-constraints.ts`, `utils/magic-bytes.ts`,
+  migration `1870000000000-DocumentVersions` (both tables + `documents.current_version_id` /
+  `requirement_id` + the `submitted_to_government` enum value; backfills a `customer` — and
+  `official` where present — version per existing document; literal per-table DDL).
+- Wired this task: admin requirement CRUD under `/api/admin/services/:serviceId/requirements` and
+  `/api/admin/requirements/:id`; the customer checklist `GET /api/customers/me/checklist`
+  (purchased services → requirements, submitted state, status, completion %).
+- Error codes `DOCUMENT_LOCKED`, `NOT_ENTITLED`, `UPLOAD_EXPIRED`, `UPLOAD_INCOMPLETE` moved from
+  "reserved" to live throw sites (`docs/error-codes.md`).
+- `npm run smoke` story 7 rewritten to drive the real flow against Postgres in **S3 mode**:
+  customer upload (presigned POST) → reject with note → resubmit new version → approve → submit to
+  government → staff official upload → customer downloads the official file (HTTP 200, bytes match)
+  → checklist 100%; plus negatives (wrong type, 26 MB, replace-while-locked, unassigned agent,
+  customer-A-vs-B IDOR). New pure-logic unit tests in `test/document-pipeline.test.ts`.

@@ -1,30 +1,41 @@
-import crypto from "crypto";
 import { NextFunction, Request, Response } from "express";
 import { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
 import { QueryFailedError } from "typeorm";
-import { HttpError } from "../utils/http-error";
+import { ZodError } from "zod";
+import { AppError } from "../utils/http-error";
 import { logger } from "../utils/logger";
 
 /**
  * The single exit for every failure.
  *
- * The previous version returned `error.message` for anything that reached it,
- * including unexpected errors. That leaked internals to the client: a Postgres
- * failure would hand back constraint and column names, and a thrown driver error
- * described the schema. AGENT.md rule 6 says not to expose sensitive metadata, and
- * a stack of unfamiliar internal detail is exactly that.
+ * Every non-2xx response leaves here in one shape:
  *
- * So the rule is: errors we raised on purpose (`HttpError`) carry a message written
- * for the caller and are returned as-is. Everything else is a bug or an outage —
- * the client gets a generic message plus a reference id, and the real detail goes
- * to the log where that id can be found.
+ *   { success: false, error: { code, message, details?, requestId } }
+ *
+ * `code` is a stable string the frontend branches on and localises; `message` is
+ * English, for developers and logs, and is only ever text we wrote. Errors we
+ * raised on purpose (`AppError`, and `HttpError` which extends it) carry all three.
+ * Library errors are mapped to a code below. Anything unrecognised is treated as a
+ * defect: the client gets a generic INTERNAL_ERROR and the requestId, while the
+ * stack goes to the log under that id. No stack, SQL, or internal name is ever put
+ * in the body, in any environment — AGENT.md rule 6.
  */
 
-interface ErrorBody {
+interface ErrorEnvelope {
   success: false;
-  error: string;
-  code: number;
-  reference?: string;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+    requestId: string;
+  };
+}
+
+interface Classified {
+  code: string;
+  httpStatus: number;
+  message: string;
+  details?: unknown;
 }
 
 /** Postgres puts its SQLSTATE on the driver error; TypeORM copies it onto the wrapper
@@ -41,31 +52,42 @@ function postgresCode(error: QueryFailedError): string | undefined {
   return typeof driver?.code === "string" ? driver.code : undefined;
 }
 
-/** Maps errors thrown by libraries onto the status the caller should actually see. */
-function classify(error: unknown): { statusCode: number; message: string } | null {
-  if (error instanceof HttpError) {
-    return { statusCode: error.statusCode, message: error.message };
+/** Maps a thrown value onto the code, status and safe message the caller should see. */
+function classify(error: unknown): Classified {
+  if (error instanceof AppError) {
+    return { code: error.code, httpStatus: error.httpStatus, message: error.message, details: error.details };
+  }
+
+  // A ZodError that was thrown rather than handled in `validate` middleware.
+  if (error instanceof ZodError) {
+    return {
+      code: "VALIDATION_FAILED",
+      httpStatus: 400,
+      message: error.issues[0]?.message ?? "Validation failed",
+      details: error.flatten().fieldErrors,
+    };
   }
 
   if (error instanceof TokenExpiredError) {
-    return { statusCode: 401, message: "Token has expired" };
+    return { code: "UNAUTHENTICATED", httpStatus: 401, message: "Token has expired" };
   }
 
   if (error instanceof JsonWebTokenError) {
-    return { statusCode: 401, message: "Invalid token" };
+    return { code: "UNAUTHENTICATED", httpStatus: 401, message: "Invalid token" };
   }
 
   // 23505 is unique_violation. Reported as a conflict, but without echoing the
   // constraint name, which would disclose how the tables are keyed.
   if (error instanceof QueryFailedError && postgresCode(error) === "23505") {
-    return { statusCode: 409, message: "That value is already in use" };
+    return { code: "CONFLICT", httpStatus: 409, message: "That value is already in use" };
   }
 
   if (error instanceof SyntaxError && "body" in error) {
-    return { statusCode: 400, message: "Request body is not valid JSON" };
+    return { code: "MALFORMED_JSON", httpStatus: 400, message: "Request body is not valid JSON" };
   }
 
-  return null;
+  // Unrecognised: assume it is a defect. A generic body; the real detail is logged.
+  return { code: "INTERNAL_ERROR", httpStatus: 500, message: "Internal server error" };
 }
 
 export function errorHandler(error: unknown, req: Request, res: Response, _next: NextFunction): void {
@@ -73,35 +95,24 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
     return;
   }
 
-  const classified = classify(error);
+  const { code, httpStatus, message, details } = classify(error);
+  const requestId = req.requestId;
 
-  if (classified) {
-    // 4xx is the caller's problem and is expected traffic; logged at warn without a
-    // stack so that a wave of failed logins does not bury real faults.
-    if (classified.statusCode >= 500) {
-      logger.error(`[error] ${req.method} ${req.originalUrl} -> ${classified.statusCode}: ${classified.message}`);
-    } else {
-      logger.warn(`[error] ${req.method} ${req.originalUrl} -> ${classified.statusCode}: ${classified.message}`);
-    }
-
-    const body: ErrorBody = { success: false, error: classified.message, code: classified.statusCode };
-    res.status(classified.statusCode).json(body);
-    return;
+  // 5xx is a fault and is logged with its stack; 4xx is expected caller traffic and
+  // is logged at warn without a stack, so a wave of failed logins does not bury a
+  // real outage. The requestId ties the log line to the client's error body.
+  if (httpStatus >= 500) {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    logger.error(`[error] [${requestId}] ${req.method} ${req.originalUrl} -> ${httpStatus} ${code}\n${detail}`);
+  } else {
+    logger.warn(`[error] [${requestId}] ${req.method} ${req.originalUrl} -> ${httpStatus} ${code}: ${message}`);
   }
 
-  // Unrecognised: assume it is a defect. The reference ties the opaque client
-  // response to the full detail in the log.
-  const reference = crypto.randomBytes(6).toString("hex");
-  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const body: ErrorEnvelope = { success: false, error: { code, message, requestId } };
 
-  logger.error(`[error] ${req.method} ${req.originalUrl} -> 500 [ref ${reference}]\n${detail}`);
+  if (details !== undefined) {
+    body.error.details = details;
+  }
 
-  const body: ErrorBody = {
-    success: false,
-    error: "Internal server error",
-    code: 500,
-    reference,
-  };
-
-  res.status(500).json(body);
+  res.status(httpStatus).json(body);
 }

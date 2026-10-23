@@ -23,6 +23,9 @@ const HEALTH = `${new URL(API).origin}/health/ready`;
 const ADMIN = { email: "admin@test.com", password: "AdminPassword123!" };
 const AGENT = { email: "agent@test.com", password: "AgentPassword123!" };
 const CUSTOMER = { email: "customer@test.com", password: "CustomerPassword123!" };
+// Seeded second customer/agent, used only for the IDOR and not-assigned negatives.
+const CUSTOMER2 = { email: "customer2@test.com", password: "CustomerPassword123!" };
+const AGENT2 = { email: "agent2@test.com", password: "AgentPassword123!" };
 
 let passed = 0;
 let failed = 0;
@@ -98,6 +101,87 @@ async function firstId(step: string, path: string): Promise<string> {
   return rows[0].id;
 }
 
+/** Asserts a negative case: the exact HTTP status and, when given, the error code. */
+function expectError(step: string, response: ApiResponse, status: number, code?: string): void {
+  const bodyCode = (response.body?.error as { code?: string } | undefined)?.code;
+  if (response.status === status && (!code || bodyCode === code)) {
+    pass(step, `HTTP ${status}${code ? ` ${code}` : ""}`);
+  } else {
+    fail(step, `expected HTTP ${status}${code ? ` ${code}` : ""}, got HTTP ${response.status} ${bodyCode ?? ""}`);
+  }
+}
+
+/** A tiny but genuine PDF (starts with the %PDF magic bytes), unique per marker. */
+function makePdf(marker: string): Buffer {
+  return Buffer.from(
+    `%PDF-1.4\n% smoke ${marker}\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n`,
+    "utf8",
+  );
+}
+
+type UploadTarget = { uploadMode: string; upload: { url: string; fields: Record<string, string> } };
+
+/**
+ * Sends the bytes for an issued upload target. In S3 mode this is a direct
+ * multipart POST to the presigned S3 URL (no bearer token -- the policy is the
+ * credential); in local mode it is a multipart POST to the API's version-upload
+ * route. Returns the raw HTTP status so callers can assert S3's own enforcement
+ * (e.g. a 26 MB body rejected by `content-length-range`).
+ */
+async function putBytes(
+  documentId: string,
+  versionId: string,
+  target: UploadTarget,
+  buffer: Buffer,
+  fileName: string,
+  contentType: string,
+  token: string,
+): Promise<number> {
+  // Buffer is a Uint8Array at runtime (a valid BlobPart); the cast only placates
+  // the @types/node ArrayBufferLike-vs-ArrayBuffer lib mismatch, with no copy.
+  const part = buffer as unknown as BlobPart;
+  const form = new FormData();
+  if (target.uploadMode === "s3") {
+    for (const [key, value] of Object.entries(target.upload.fields)) form.append(key, value);
+    form.append("file", new Blob([part], { type: contentType }), fileName);
+    const response = await fetch(target.upload.url, { method: "POST", body: form });
+    return response.status;
+  }
+  form.append("file", new Blob([part], { type: contentType }), fileName);
+  const response = await fetch(`${API}/documents/${documentId}/versions/${versionId}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  return response.status;
+}
+
+/** Uploads a new version through the real intent -> bytes -> confirm pipeline. */
+async function uploadVersion(
+  token: string,
+  documentId: string,
+  buffer: Buffer,
+  fileName: string,
+  contentType: string,
+  kind?: "staff_on_behalf" | "official",
+): Promise<ApiResponse> {
+  const intent = data<{ versionId: string; uploadMode: string; upload: UploadTarget["upload"] }>(
+    await need(
+      `upload-intent (${fileName})`,
+      call("POST", `/documents/${documentId}/versions/upload-intent`, {
+        token,
+        body: { fileName, contentType, ...(kind ? { kind } : {}) },
+      }),
+    ),
+  );
+  const putStatus = await putBytes(documentId, intent.versionId, intent, buffer, fileName, contentType, token);
+  if (putStatus >= 300) throw new Error(`byte upload for ${fileName} returned HTTP ${putStatus}`);
+  return need(
+    `confirm (${fileName})`,
+    call("POST", `/documents/${documentId}/versions/${intent.versionId}/confirm`, { token }),
+  );
+}
+
 async function main(): Promise<void> {
   console.log(`\nSmoke test against ${API}\n${"-".repeat(64)}`);
 
@@ -110,6 +194,19 @@ async function main(): Promise<void> {
   const customerToken = await login(CUSTOMER);
   pass("login as admin, agent and customer");
 
+  // -- story 0: admin creates a category (services/packages require one) -----
+  const categorySlug = `smoke-cat-${Date.now()}`;
+  const categoryId = data<{ id: string }>(
+    await need(
+      "create category",
+      call("POST", "/admin/categories", {
+        token: adminToken,
+        body: { slug: categorySlug, nameEn: "Smoke Category", nameEs: "Categoría Smoke" },
+      }),
+    ),
+  ).id;
+  pass("story 0 - admin creates a category", categorySlug);
+
   // -- story 1: admin creates a service -------------------------------------
   const serviceName = `Smoke Service ${Date.now()}`;
   const serviceId = data<{ id: string }>(
@@ -117,7 +214,7 @@ async function main(): Promise<void> {
       "create service",
       call("POST", "/admin/services", {
         token: adminToken,
-        body: { name: serviceName, description: "created by smoke.ts", basePrice: 1200 },
+        body: { name: serviceName, nameEn: serviceName, description: "created by smoke.ts", basePrice: 1200, categoryId },
       }),
     ),
   ).id;
@@ -132,9 +229,11 @@ async function main(): Promise<void> {
         token: adminToken,
         body: {
           name: packageName,
+          nameEn: packageName,
           type: "standard",
           price: 48000,
           durationDays: 365,
+          categoryId,
           serviceIds: [serviceId],
         },
       }),
@@ -159,6 +258,17 @@ async function main(): Promise<void> {
     pass("story 3 - the new package is live on the public site");
   } else {
     fail("story 3 - the new package is live on the public site", "missing from /public/packages");
+  }
+
+  // the public list filters by category slug and embeds the category object
+  const filteredPackages = data<Array<{ id: string; category: { slug: string } | null }>>(
+    await need("public packages filtered by category", call("GET", `/public/packages?category=${categorySlug}`)),
+  );
+  const filteredHit = filteredPackages.find((row) => row.id === packageId);
+  if (filteredHit && filteredHit.category?.slug === categorySlug) {
+    pass("story 3 - public list filters by category and returns the category object");
+  } else {
+    fail("story 3 - public list filters by category", filteredHit ? "category object missing/mismatched" : "package missing from ?category filter");
   }
 
   // -- story 4: quote --------------------------------------------------------
@@ -335,54 +445,184 @@ async function main(): Promise<void> {
   );
   pass("story 7 - agent is assigned the customer");
 
-  const uploadTarget = data<{ document: { id: string }; uploadMode: string }>(
+  // Give THIS customer an accepted quotation for the smoke service, so the
+  // required-documents checklist lists it (`purchasedServiceIds` needs an accepted
+  // quotation or an active subscription for the service).
+  const customerQuoteId = data<{ id: string }>(customerQuote).id;
+  await need(
+    "send customer quotation",
+    call("PATCH", `/admin/quotations/${customerQuoteId}/status`, { token: adminToken, body: { status: "sent" } }),
+  );
+  await need(
+    "accept customer quotation",
+    call("PATCH", `/admin/quotations/${customerQuoteId}/status`, { token: adminToken, body: { status: "accepted" } }),
+  );
+
+  // Admin defines a required document (the checklist item) for the service.
+  const requirementId = data<{ id: string }>(
+    await need(
+      "admin creates a required document",
+      call("POST", `/admin/services/${serviceId}/requirements`, {
+        token: adminToken,
+        body: { nameEn: "Business permit", nameEs: "Permiso de negocio", isRequired: true, sortOrder: 0 },
+      }),
+    ),
+  ).id;
+  pass("story 7 - admin defines a required document for the service");
+
+  // 1. Customer's first upload: create the document + an intent, PUT the bytes,
+  //    confirm. A first upload leaves the document `pending`.
+  const firstPdf = makePdf("v1");
+  const created = data<{ document: { id: string }; versionId: string; uploadMode: string; upload: UploadTarget["upload"] }>(
     await need(
       "document upload target",
       call("POST", "/documents/upload-url", {
         token: customerToken,
-        body: { fileName: "smoke-permit.pdf", contentType: "application/pdf", serviceId },
+        body: { fileName: "smoke-permit.pdf", contentType: "application/pdf", serviceId, requirementId },
       }),
     ),
   );
-  pass("story 7 - upload target issued", `mode ${uploadTarget.uploadMode}`);
+  const documentId = created.document.id;
+  pass("story 7 - upload target issued", `mode ${created.uploadMode}`);
 
-  const documentId = uploadTarget.document.id;
+  const firstPut = await putBytes(documentId, created.versionId, created, firstPdf, "smoke-permit.pdf", "application/pdf", customerToken);
+  if (firstPut >= 300) throw new Error(`first byte upload returned HTTP ${firstPut}`);
+  const confirmed = await need(
+    "confirm first version",
+    call("POST", `/documents/${documentId}/versions/${created.versionId}/confirm`, { token: customerToken }),
+  );
+  if (data<{ status: string }>(confirmed).status === "pending") {
+    pass("story 7 - customer uploads the first version (stays pending)");
+  } else {
+    fail("story 7 - customer uploads the first version", `status is ${data<{ status: string }>(confirmed).status}`);
+  }
+
+  // 2. Agent review: pending -> under_review -> rejected (a note is required).
   await need(
     "document under review",
-    call("PATCH", `/documents/${documentId}/status`, {
-      token: agentToken,
-      body: { fromStatus: "pending", toStatus: "under_review" },
-    }),
+    call("PATCH", `/documents/${documentId}/status`, { token: agentToken, body: { fromStatus: "pending", toStatus: "under_review" } }),
   );
   pass("story 7 - agent takes the document under review");
 
-  const rejected = await call("PATCH", `/documents/${documentId}/status`, {
-    token: agentToken,
-    body: { fromStatus: "under_review", toStatus: "rejected", note: "Expired permit" },
-  });
-  if (rejected.status === 200) {
-    pass("story 7 - agent rejects with a reason");
+  await need(
+    "agent rejects with a note",
+    call("PATCH", `/documents/${documentId}/status`, { token: agentToken, body: { fromStatus: "under_review", toStatus: "rejected", note: "Expired permit" } }),
+  );
+  pass("story 7 - agent rejects with a reason");
+
+  // 3. Customer resubmits a NEW version -> rejected moves back to pending.
+  const resubmit = await uploadVersion(customerToken, documentId, makePdf("v2"), "smoke-permit-v2.pdf", "application/pdf");
+  if (data<{ status: string }>(resubmit).status === "pending") {
+    pass("story 7 - customer resubmits a new version (rejected -> pending)");
   } else {
-    fail("story 7 - agent rejects with a reason", `HTTP ${rejected.status}`);
+    fail("story 7 - customer resubmits a new version", `status is ${data<{ status: string }>(resubmit).status}`);
   }
 
-  const resubmitted = await call("POST", `/documents/${documentId}/resubmit`, {
-    token: customerToken,
-  });
-  if (resubmitted.status >= 200 && resubmitted.status < 300) {
-    pass("story 7 - customer resubmits as a new version");
+  const versionsAfterResubmit = data<Array<{ versionNo: number; kind: string }>>(
+    await need("list versions", call("GET", `/documents/${documentId}/versions`, { token: customerToken })),
+  );
+  if (versionsAfterResubmit.filter((v) => v.kind === "customer").length >= 2) {
+    pass("story 7 - version history is preserved", `${versionsAfterResubmit.length} version(s)`);
   } else {
-    skip("story 7 - customer resubmits as a new version", "phase 5.1");
+    fail("story 7 - version history is preserved", `only ${versionsAfterResubmit.length} version(s)`);
   }
 
-  const checklist = await call("GET", "/customers/me/required-documents", {
-    token: customerToken,
-  });
-  if (checklist.status === 200) {
-    pass("story 7 - required-documents checklist");
+  // 4. Agent approves: pending -> under_review -> approved.
+  await need("re-review", call("PATCH", `/documents/${documentId}/status`, { token: agentToken, body: { fromStatus: "pending", toStatus: "under_review" } }));
+  await need("approve", call("PATCH", `/documents/${documentId}/status`, { token: agentToken, body: { fromStatus: "under_review", toStatus: "approved" } }));
+  pass("story 7 - agent approves the document");
+
+  // 5. Agent marks it submitted to the government.
+  await need(
+    "submit to government",
+    call("PATCH", `/documents/${documentId}/status`, { token: agentToken, body: { fromStatus: "approved", toStatus: "submitted_to_government" } }),
+  );
+  pass("story 7 - agent marks it submitted to the government");
+
+  // 6. Staff upload the official approved file -> moves back to approved.
+  const officialPdf = makePdf("official");
+  const afterOfficial = await uploadVersion(agentToken, documentId, officialPdf, "smoke-official.pdf", "application/pdf", "official");
+  if (data<{ status: string }>(afterOfficial).status === "approved") {
+    pass("story 7 - staff upload the official file (-> approved)");
   } else {
-    skip("story 7 - required-documents checklist", "phase 5.2");
+    fail("story 7 - staff upload the official file", `status is ${data<{ status: string }>(afterOfficial).status}`);
   }
+
+  const history = data<Array<{ toStatus: string }>>(
+    await need("document history", call("GET", `/documents/${documentId}/history`, { token: agentToken })),
+  );
+  if (history.some((h) => h.toStatus === "submitted_to_government") && history.some((h) => h.toStatus === "approved")) {
+    pass("story 7 - history records every transition", `${history.length} rows`);
+  } else {
+    fail("story 7 - history records every transition", `rows: ${history.map((h) => h.toStatus).join(", ")}`);
+  }
+
+  // 7. Customer downloads the official file -> HTTP 200 and the bytes match.
+  const officialVersion = data<Array<{ id: string; kind: string }>>(
+    await need("customer lists versions", call("GET", `/documents/${documentId}/versions`, { token: customerToken })),
+  ).find((v) => v.kind === "official");
+  if (!officialVersion) {
+    fail("story 7 - customer downloads the official file", "no official version visible to the customer");
+  } else {
+    const dl = data<{ downloadUrl: string }>(
+      await need("official download url", call("GET", `/documents/${documentId}/versions/${officialVersion.id}/download-url`, { token: customerToken })),
+    );
+    const fetched = await fetch(dl.downloadUrl);
+    const bytes = Buffer.from(await fetched.arrayBuffer());
+    if (fetched.status === 200 && bytes.equals(officialPdf)) {
+      pass("story 7 - customer downloads the official file (bytes match)", `${bytes.length} bytes`);
+    } else {
+      fail("story 7 - customer downloads the official file", `HTTP ${fetched.status}, ${bytes.length} bytes, match=${bytes.equals(officialPdf)}`);
+    }
+  }
+
+  // 8. The required-documents checklist reaches 100% for the service.
+  const checklist = data<{ services: Array<{ serviceId: string; completion: number }> }>(
+    await need("customer checklist", call("GET", "/customers/me/checklist", { token: customerToken })),
+  );
+  const checklistBlock = checklist.services.find((s) => s.serviceId === serviceId);
+  if (checklistBlock && checklistBlock.completion === 100) {
+    pass("story 7 - required-documents checklist reaches 100%");
+  } else {
+    fail("story 7 - required-documents checklist", checklistBlock ? `completion ${checklistBlock.completion}%` : "service not in checklist (not purchased?)");
+  }
+
+  // -- story 7 negatives: the upload and access guards ----------------------
+  const wrongType = await call("POST", "/documents/upload-url", {
+    token: customerToken,
+    body: { fileName: "evil.html", contentType: "text/html", serviceId },
+  });
+  expectError("story 7 neg - wrong file type is refused", wrongType, 415, "FILE_TYPE_NOT_ALLOWED");
+
+  // 26 MB on a FRESH pending document: S3's content-length-range rejects the POST
+  // itself (S3 mode); in local mode the ceiling is enforced on confirm (413).
+  const bigCreate = data<{ document: { id: string }; versionId: string; uploadMode: string; upload: UploadTarget["upload"] }>(
+    await need("size-test upload target", call("POST", "/documents/upload-url", { token: customerToken, body: { fileName: "big.pdf", contentType: "application/pdf", serviceId } })),
+  );
+  const oversize = Buffer.concat([makePdf("big"), Buffer.alloc(26 * 1024 * 1024)]);
+  const bigStatus = await putBytes(bigCreate.document.id, bigCreate.versionId, bigCreate, oversize, "big.pdf", "application/pdf", customerToken);
+  let oversizeRejected = bigStatus >= 400;
+  if (!oversizeRejected) {
+    const conf = await call("POST", `/documents/${bigCreate.document.id}/versions/${bigCreate.versionId}/confirm`, { token: customerToken });
+    oversizeRejected = conf.status === 413;
+  }
+  if (oversizeRejected) pass("story 7 neg - a 26 MB upload is refused", `put HTTP ${bigStatus}`);
+  else fail("story 7 neg - a 26 MB upload is refused", `put HTTP ${bigStatus}, confirm did not 413`);
+
+  // Replace while locked: the main document is `approved`, so a customer intent is refused.
+  const lockedReplace = await call("POST", `/documents/${documentId}/versions/upload-intent`, {
+    token: customerToken,
+    body: { fileName: "sneaky.pdf", contentType: "application/pdf" },
+  });
+  expectError("story 7 neg - customer cannot replace a locked document", lockedReplace, 409, "DOCUMENT_LOCKED");
+
+  const agent2Token = await login(AGENT2);
+  const notAssigned = await call("GET", `/documents/${documentId}`, { token: agent2Token });
+  expectError("story 7 neg - an unassigned agent is refused", notAssigned, 403);
+
+  const customer2Token = await login(CUSTOMER2);
+  const idor = await call("GET", `/documents/${documentId}`, { token: customer2Token });
+  expectError("story 7 neg - customer B cannot read customer A's document (IDOR)", idor, 403);
 
   // -- story 8: the customer dashboard --------------------------------------
   const dashboard = await need(

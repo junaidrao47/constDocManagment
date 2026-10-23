@@ -1,13 +1,34 @@
-import { Column, Entity, Index, JoinTable, ManyToMany, OneToMany } from "typeorm";
+import { Column, Entity, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, OneToMany } from "typeorm";
 import { AppBaseEntity } from "../../entities/base.entity";
 import { ServiceEntity } from "../../entities/service.entity";
 import { SubscriptionEntity } from "../subscriptions/subscription.entity";
+import { CategoryEntity } from "../categories/category.entity";
 
 @Entity({ name: "packages" })
 export class PackageEntity extends AppBaseEntity {
 	@Column({ type: "varchar", length: 150 })
 	@Index({ unique: true })
 	name!: string;
+
+	// Bilingual display fields; `name`/`description` stay as the canonical unique key.
+	@Column({ name: "name_en", type: "varchar", length: 150 })
+	nameEn!: string;
+
+	@Column({ name: "name_es", type: "varchar", length: 150 })
+	nameEs!: string;
+
+	@Column({ name: "description_en", type: "text", nullable: true })
+	descriptionEn?: string | null;
+
+	@Column({ name: "description_es", type: "text", nullable: true })
+	descriptionEs?: string | null;
+
+	@Column({ name: "category_id", type: "uuid" })
+	categoryId!: string;
+
+	@ManyToOne(() => CategoryEntity, { onDelete: "RESTRICT" })
+	@JoinColumn({ name: "category_id" })
+	category?: CategoryEntity;
 
 	@Column({ type: "varchar", length: 50 })
 	type!: string;

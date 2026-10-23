@@ -17,12 +17,15 @@ import { managerRouter } from "./modules/manager/manager.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
 import { errorHandler } from "./middleware/errorHandler";
+import { requestId } from "./middleware/request-id";
+import { AppError } from "./utils/http-error";
 import { UserRole } from "./modules/users/user.entity";
 import { AppDataSource } from "./config/database";
 import { redisClient } from "./config/redis";
 import { env } from "./config/env";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { adminCatalogRouter, publicCatalogRouter } from "./modules/catalog/catalog.router";
+import { adminCategoryRouter } from "./modules/categories/category.router";
 
 const READINESS_TIMEOUT_MS = 2_000;
 
@@ -58,12 +61,27 @@ export function createApp() {
     .filter(Boolean);
   const allowAnyOrigin = allowedOrigins.includes("*");
 
+  // Emits the API error envelope for a throttled request, so 429 looks like every
+  // other failure (code RATE_LIMITED, with the requestId) instead of express-rate-
+  // limit's default plain text or ad-hoc JSON.
+  const rateLimitHandler = (req: Request, res: Response): void => {
+    res.status(429).json({
+      success: false,
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many requests. Try again later.",
+        requestId: req.requestId,
+      },
+    });
+  };
+
   // General ceiling, per client IP.
   const rateLimiter = rateLimit({
     windowMs: 60_000,
     limit: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    handler: rateLimitHandler,
   });
 
   /**
@@ -84,7 +102,7 @@ export function createApp() {
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    message: { success: false, error: "Too many attempts. Try again later." },
+    handler: rateLimitHandler,
   });
 
   // nginx terminates the connection, so without this every request appears to come
@@ -92,6 +110,10 @@ export function createApp() {
   // Exactly one hop is trusted: trusting the whole chain would let a client forge
   // X-Forwarded-For and get a fresh quota per request.
   app.set("trust proxy", 1);
+
+  // First in the chain: every request gets an id before anything can fail, so even a
+  // malformed-JSON 400 from the body parser below carries one in its envelope.
+  app.use(requestId);
 
   app.use(helmet());
   app.use(
@@ -107,7 +129,14 @@ export function createApp() {
   // to read when it is not buried in one combined-format line per request, and the
   // suite makes several dozen.
   if (env.nodeEnv !== "test") {
-    app.use(morgan("combined"));
+    // combined format, prefixed with the request id so an access line can be tied to
+    // the matching error line and the client's error body.
+    morgan.token("id", (req: Request) => req.requestId);
+    app.use(
+      morgan(
+        '[:id] :remote-addr - :remote-user ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"',
+      ),
+    );
   }
 
   app.use("/api", rateLimiter);
@@ -129,6 +158,7 @@ export function createApp() {
   // oversight lives under /api/manager, which Phase 4 adds along with assignments.
   app.use("/api/admin", authenticate, authorize(UserRole.Admin), adminRouter);
   app.use("/api/admin/catalog", authenticate, authorize(UserRole.Admin), adminCatalogRouter);
+  app.use("/api/admin/categories", authenticate, authorize(UserRole.Admin), adminCategoryRouter);
   // Manager oversight: assignments. Admin is included deliberately — the RBAC matrix
   // gives both roles "assign customer to agent", and an admin locked out of this
   // could only fix a bad assignment with a database client.
@@ -172,6 +202,12 @@ export function createApp() {
       data: { status: ready ? "ready" : "degraded", checks },
       message: ready ? "ok" : "one or more dependencies are unavailable",
     });
+  });
+
+  // Anything under /api that no router matched is a 404 in the envelope, rather than
+  // Express's default HTML page. Mounted after the routers and before the handler.
+  app.use("/api", (req: Request, _res: Response, next: NextFunction) => {
+    next(new AppError("NOT_FOUND", 404, `Route not found: ${req.method} ${req.path}`));
   });
 
   app.use(errorHandler);

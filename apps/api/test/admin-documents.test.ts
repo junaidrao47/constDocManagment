@@ -18,7 +18,10 @@ describe("document rejection and admin endpoints", () => {
       .send({ toStatus: DocumentStatus.Rejected });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/rejection note/i);
+    expect(response.body.error.message).toMatch(/rejection note/i);
+    // The status route's schema requires the note, so the request is rejected at the
+    // validation layer (VALIDATION_FAILED) before the service's NOTE_REQUIRED guard.
+    expect(response.body.error.code).toBe("VALIDATION_FAILED");
   });
 
   it("lists all customers' documents with status/customer filters and pagination", async () => {

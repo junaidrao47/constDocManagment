@@ -1,15 +1,27 @@
 import { NextFunction, Request, Response } from "express";
 import { ZodTypeAny } from "zod";
+import { AppError } from "../utils/http-error";
+
+/**
+ * Turns a Zod failure into the API's VALIDATION_FAILED envelope.
+ *
+ * Handed to `next` rather than written to `res` directly, so the single error
+ * handler owns the response shape and the requestId. `details` carries the
+ * per-field errors the frontend shows inline; the top-level message is the first
+ * issue, for a caller that only reads the summary.
+ */
+function validationError(error: import("zod").ZodError): AppError {
+  const message = error.issues[0]?.message ?? "Validation failed";
+  return new AppError("VALIDATION_FAILED", 400, message, error.flatten().fieldErrors);
+}
 
 /** Validates and replaces `req.body` with the parsed, coerced, normalised result. */
 export function validate(schema: ZodTypeAny) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.body);
 
     if (!result.success) {
-      const issue = result.error.issues[0];
-      const message = issue?.message ?? "Validation failed";
-      res.status(400).json({ success: false, error: message, details: result.error.flatten() });
+      next(validationError(result.error));
       return;
     }
 
@@ -26,13 +38,11 @@ export function validate(schema: ZodTypeAny) {
  * route reads as validating one specific part of the request.
  */
 export function validateQuery(schema: ZodTypeAny) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.query);
 
     if (!result.success) {
-      const issue = result.error.issues[0];
-      const message = issue?.message ?? "Validation failed";
-      res.status(400).json({ success: false, error: message, details: result.error.flatten() });
+      next(validationError(result.error));
       return;
     }
 
@@ -45,13 +55,11 @@ export function validateQuery(schema: ZodTypeAny) {
 
 /** Rejects a path parameter that is not a UUID before it reaches a repository. */
 export function validateParams(schema: ZodTypeAny) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.params);
 
     if (!result.success) {
-      const issue = result.error.issues[0];
-      const message = issue?.message ?? "Validation failed";
-      res.status(400).json({ success: false, error: message, details: result.error.flatten() });
+      next(validationError(result.error));
       return;
     }
 

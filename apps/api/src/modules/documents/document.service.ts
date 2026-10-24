@@ -29,6 +29,8 @@ import { Locale, pickLocale } from "../../utils/i18n";
 import { UserRole } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import { DocumentVersionEntity, type DocumentVersionKind } from "./document-version.entity";
+import { DocumentPhaseEntity } from "./document-phase.entity";
+import { PhaseStatus } from "./phase-status";
 import { ServiceRequiredDocumentEntity } from "./service-required-document.entity";
 import { canUploadDocuments } from "./entitlement";
 import {
@@ -115,9 +117,61 @@ function documentRepo() {
 function versionRepo() {
   return AppDataSource.getRepository(DocumentVersionEntity);
 }
+function phaseRepo() {
+  return AppDataSource.getRepository(DocumentPhaseEntity);
+}
+
+export interface PhaseProgress {
+  completed: number;
+  total: number;
+  percent: number;
+}
+
+export function serializePhase(phase: DocumentPhaseEntity) {
+  return {
+    id: phase.id,
+    documentId: phase.documentId,
+    position: phase.position,
+    nameEn: phase.nameEn,
+    nameEs: phase.nameEs,
+    department: phase.department ?? null,
+    targetDate: phase.targetDate ?? null,
+    status: phase.status,
+    completedAt: phase.completedAt ?? null,
+    completedBy: phase.completedBy ?? null,
+    note: phase.note ?? null,
+    resultVersionId: phase.resultVersionId ?? null,
+    createdAt: phase.createdAt,
+    updatedAt: phase.updatedAt,
+  };
+}
+
+/** Phases for a document, ordered by position. */
+export async function listPhasesForDocument(documentId: string): Promise<DocumentPhaseEntity[]> {
+  return phaseRepo().find({ where: { documentId }, order: { position: "ASC" } });
+}
+
+/** Progress = completed phases / total phases (0 phases → 0%). */
+export function computePhaseProgress(phases: DocumentPhaseEntity[]): PhaseProgress {
+  const total = phases.length;
+  const completed = phases.filter((p) => p.status === PhaseStatus.Completed).length;
+  const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+  return { completed, total, percent };
+}
 
 function isStaff(role: UserRole): boolean {
   return STAFF_ROLES.includes(role);
+}
+
+/**
+ * Which version kinds the owning customer may download. The official approved file (once
+ * the document is approved) and the per-phase result files (§11.6); never staff-on-behalf
+ * uploads. The caller has already proven ownership via `assertCanReadDocument`.
+ */
+function customerMayDownload(version: DocumentVersionEntity, document: DocumentEntity): boolean {
+  if (version.kind === "official") return document.status === DocumentStatus.Approved;
+  if (version.kind === "phase_result") return version.status === "ready";
+  return false;
 }
 
 function versionStorageKey(documentId: string, kind: DocumentVersionKind, fileName: string): string {
@@ -206,6 +260,7 @@ async function normalizeDocument(document: DocumentEntity) {
     approvedUploadedAt: document.approvedUploadedAt ?? null,
     status: document.status,
     expiresAt: document.expiresAt ?? null,
+    targetDate: document.targetDate ?? null,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
     downloadUrl,
@@ -318,7 +373,14 @@ export const documentService = {
     assertDatabaseReady();
     const document = await requireDocument(documentId);
     await assertCanReadDocument(document, actor);
-    return normalizeDocument(document);
+    // Phases and progress travel with the single-document read (PROJECT-BRIEF §11.5/§11.6).
+    // Left out of the list views to avoid a phase query per row.
+    const phases = await listPhasesForDocument(documentId);
+    return {
+      ...(await normalizeDocument(document)),
+      phases: phases.map(serializePhase),
+      progress: computePhaseProgress(phases),
+    };
   },
 
   async listVersions(actor: DocumentActor, documentId: string) {
@@ -326,8 +388,8 @@ export const documentService = {
     const document = await requireDocument(documentId);
     await assertCanReadDocument(document, actor);
     const versions = await versionRepo().find({ where: { documentId, status: "ready" } });
-    // Customers never see the internal staff review history of files; they see their
-    // own submissions and the official result.
+    // Customers never see the internal staff-on-behalf uploads, but they do see their own
+    // submissions, the official result, and the per-phase result files (§11.6 visibility).
     const visible =
       actor.role === UserRole.Customer
         ? versions.filter((v) => v.kind !== "staff_on_behalf")
@@ -600,6 +662,83 @@ export const documentService = {
     return this.confirmVersion(actor, documentId, intent.versionId);
   },
 
+  // ── Phase result uploads (PROJECT-BRIEF §11.5) ───────────────────────────────
+  //
+  // A manager uploads the file a phase produced. It reuses the same two-step
+  // intent/confirm pipeline and the generic byte sink, but with kind='phase_result'
+  // and — unlike 'official' — it never changes the document's own status. The phase
+  // side effects (mark completed, link the version) are applied by phase.service.
+
+  /** Issues an upload target for a phase-result file. Staff only. */
+  async createPhaseResultIntent(actor: DocumentActor, documentId: string, input: { fileName: string; contentType: string }) {
+    assertDatabaseReady();
+    const document = await requireDocument(documentId);
+    if (!isStaff(actor.role)) throw new HttpError(403, "Only staff may upload a phase result");
+
+    const safeFileName = sanitizeFileName(input.fileName);
+    if (!safeFileName || safeFileName === "." || safeFileName === "..") {
+      throw new HttpError(400, "File name must contain at least one supported character");
+    }
+    await validateUploadType(input.contentType, safeFileName, document.requirementId);
+
+    const version = await versionRepo().save(
+      versionRepo().create({
+        documentId: document.id,
+        versionNo: await nextVersionNo(document.id),
+        kind: "phase_result",
+        storageKey: versionStorageKey(document.id, "phase_result", safeFileName),
+        fileName: safeFileName,
+        mimeType: input.contentType,
+        uploadedBy: actor.id,
+        uploadedByRole: actor.role,
+        status: "intent",
+        intentExpiresAt: new Date(Date.now() + INTENT_TTL_MS),
+      }),
+    );
+
+    return buildUploadTarget(document, version);
+  },
+
+  /**
+   * Validates the uploaded phase-result bytes and marks the version ready. Returns
+   * the ready version so phase.service can link it; it does NOT touch the document
+   * status or the phase (that is phase.service's transaction).
+   */
+  async confirmPhaseResultVersion(actor: DocumentActor, documentId: string, versionId: string): Promise<DocumentVersionEntity> {
+    assertDatabaseReady();
+    const document = await requireDocument(documentId);
+    if (!isStaff(actor.role)) throw new HttpError(403, "Only staff may upload a phase result");
+    const version = await requireVersion(documentId, versionId);
+    if (version.kind !== "phase_result") throw new AppError("BAD_REQUEST", 400, "This version is not a phase result");
+
+    if (version.status === "ready") return version;
+    if (version.intentExpiresAt && version.intentExpiresAt.getTime() < Date.now()) {
+      throw new AppError("UPLOAD_EXPIRED", 410, "This upload window has expired; request a new one");
+    }
+
+    const head = await headObject({ key: version.storageKey });
+    if (!head) throw new AppError("UPLOAD_INCOMPLETE", 400, "No uploaded file was found for this version");
+    if (head.size <= 0) throw new AppError("UPLOAD_INCOMPLETE", 400, "The uploaded file is empty");
+    if (head.size > MAX_UPLOAD_BYTES) {
+      throw new AppError("FILE_TOO_LARGE", 413, `File exceeds the ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit`);
+    }
+
+    const declaredMime = version.mimeType ?? head.contentType ?? "application/octet-stream";
+    if (!ALLOWED_UPLOAD_TYPES[declaredMime]) {
+      throw new AppError("FILE_TYPE_NOT_ALLOWED", 415, "Stored object has a disallowed content type");
+    }
+    const prefix = await getObjectRange({ key: version.storageKey, end: MAGIC_BYTE_PREFIX_LENGTH });
+    if (!prefix || !magicBytesMatch(prefix, declaredMime)) {
+      throw new AppError("FILE_TYPE_NOT_ALLOWED", 415, "File contents do not match the declared type");
+    }
+
+    version.status = "ready";
+    version.sizeBytes = String(head.size);
+    version.mimeType = declaredMime;
+    await versionRepo().save(version);
+    return version;
+  },
+
   // ── Downloads ───────────────────────────────────────────────────────────────
 
   async getVersionDownloadTarget(actor: DocumentActor, documentId: string, versionId: string, options: { inline?: boolean } = {}) {
@@ -609,11 +748,8 @@ export const documentService = {
     const version = await requireVersion(documentId, versionId);
     if (version.status !== "ready") throw new AppError("UPLOAD_INCOMPLETE", 400, "This version is not ready");
 
-    if (actor.role === UserRole.Customer) {
-      // Customers download only the latest official file, and only once approved.
-      if (version.kind !== "official" || document.status !== DocumentStatus.Approved) {
-        throw new AppError("NOT_ENTITLED", 403, "The approved official file is not available yet");
-      }
+    if (actor.role === UserRole.Customer && !customerMayDownload(version, document)) {
+      throw new AppError("NOT_ENTITLED", 403, "This file is not available to download yet");
     }
 
     const disposition = options.inline
@@ -639,8 +775,8 @@ export const documentService = {
     const document = await requireDocument(documentId);
     await assertCanReadDocument(document, actor);
     const version = await requireVersion(documentId, versionId);
-    if (actor.role === UserRole.Customer && (version.kind !== "official" || document.status !== DocumentStatus.Approved)) {
-      throw new AppError("NOT_ENTITLED", 403, "The approved official file is not available yet");
+    if (actor.role === UserRole.Customer && !customerMayDownload(version, document)) {
+      throw new AppError("NOT_ENTITLED", 403, "This file is not available to download yet");
     }
     return version;
   },

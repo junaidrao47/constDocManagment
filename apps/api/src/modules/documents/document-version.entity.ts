@@ -2,7 +2,7 @@ import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { AppBaseEntity } from "../../entities/base.entity";
 import { DocumentEntity } from "./document.entity";
 
-export type DocumentVersionKind = "customer" | "staff_on_behalf" | "official";
+export type DocumentVersionKind = "customer" | "staff_on_behalf" | "official" | "phase_result";
 
 /** `intent` = an upload target was issued but the bytes are not confirmed yet. */
 export type DocumentVersionStatus = "intent" | "ready";

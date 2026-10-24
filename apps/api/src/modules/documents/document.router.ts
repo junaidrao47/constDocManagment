@@ -13,6 +13,14 @@ import {
   VersionIdParamSchema,
 } from "./document.schema";
 import { DocumentActor, documentService } from "./document.service";
+import { phaseService } from "./phase.service";
+import {
+  CreatePhasesSchema,
+  PhaseIdParamSchema,
+  PhaseResultIntentSchema,
+  PhaseResultParamSchema,
+  UpdatePhaseSchema,
+} from "./phase.schema";
 import { ALLOWED_EXTENSIONS, ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from "./upload-constraints";
 import { successResponse } from "../../utils/response";
 import { getDownloadUrl, getLocalDocumentPath } from "../../utils/s3";
@@ -71,8 +79,41 @@ function actor(req: Request): DocumentActor {
   return { id: req.user.id, role: req.user.role };
 }
 
-// ── Status contract (any authenticated role) ────────────────────────────────────
+// ── Status contracts (any authenticated role) ───────────────────────────────────
 documentRouter.get("/statuses", sendAsync(async () => documentService.getStatusContract()));
+documentRouter.get("/phases/statuses", sendAsync(async () => phaseService.getStatusContract()));
+
+// ── Document phases (manager of the customer, or admin) ──────────────────────────
+documentRouter.post(
+  "/:id/phases",
+  authorize(UserRole.Manager, UserRole.Admin),
+  validateParams(DocumentIdParamSchema),
+  validate(CreatePhasesSchema),
+  sendAsync((req) => phaseService.createOrReorder(actor(req), req.params.id, req.body), 201),
+);
+
+documentRouter.patch(
+  "/:id/phases/:phaseId",
+  authorize(UserRole.Manager, UserRole.Admin),
+  validateParams(PhaseIdParamSchema),
+  validate(UpdatePhaseSchema),
+  sendAsync((req) => phaseService.updatePhase(actor(req), req.params.id, req.params.phaseId, req.body)),
+);
+
+documentRouter.post(
+  "/:id/phases/:phaseId/result-upload-intent",
+  authorize(UserRole.Manager, UserRole.Admin),
+  validateParams(PhaseIdParamSchema),
+  validate(PhaseResultIntentSchema),
+  sendAsync((req) => phaseService.createResultIntent(actor(req), req.params.id, req.params.phaseId, req.body), 201),
+);
+
+documentRouter.post(
+  "/:id/phases/:phaseId/result/:versionId/confirm",
+  authorize(UserRole.Manager, UserRole.Admin),
+  validateParams(PhaseResultParamSchema),
+  sendAsync((req) => phaseService.confirmResult(actor(req), req.params.id, req.params.phaseId, req.params.versionId)),
+);
 
 // ── Upload pipeline ─────────────────────────────────────────────────────────────
 documentRouter.post(

@@ -60,6 +60,10 @@ export class DocumentEntity extends AppBaseEntity {
 	@Column({ name: "expires_at", type: "timestamptz", nullable: true })
 	expiresAt?: Date | null;
 
+	// Manager's target date for the whole document's government approval (PROJECT-BRIEF §11.5).
+	@Column({ name: "target_date", type: "timestamptz", nullable: true })
+	targetDate?: Date | null;
+
 	@OneToMany(() => DocumentStatusHistoryEntity, (history: DocumentStatusHistoryEntity) => history.document)
 	statusHistory?: DocumentStatusHistoryEntity[];
 }

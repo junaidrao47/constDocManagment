@@ -5,6 +5,7 @@ import { LocationEntity } from "../entities/location.entity";
 import { ServiceEntity } from "../entities/service.entity";
 import { WorkerRangeEntity } from "../entities/worker-range.entity";
 import { PackageEntity } from "../modules/packages/package.entity";
+import { CategoryEntity } from "../modules/categories/category.entity";
 import { QuotationEntity } from "../modules/quotations/quotation.entity";
 import { UserEntity, UserRole } from "../modules/users/user.entity";
 
@@ -37,9 +38,34 @@ async function seed() {
   await upsertUser("customer2@test.com", "Demo Customer Two", UserRole.Customer, PHASE0_PASSWORDS.customer);
   await upsertUser("agent2@test.com", "Demo Agent Two", UserRole.Agent, PHASE0_PASSWORDS.agent);
 
+  // Categories must exist before services/packages (every service/package needs one).
+  // "general" matches the slug the migration inserts, so seeding stays consistent with
+  // a DB that was migrated before being seeded.
+  const categoryRepository = AppDataSource.getRepository(CategoryEntity);
+  async function upsertCategory(slug: string, nameEn: string, nameEs: string, sortOrder: number) {
+    const existing = await categoryRepository.findOne({ where: { slug } });
+    if (existing) {
+      existing.nameEn = nameEn; existing.nameEs = nameEs; existing.sortOrder = sortOrder; existing.isActive = true;
+      return categoryRepository.save(existing);
+    }
+    return categoryRepository.save(categoryRepository.create({ slug, nameEn, nameEs, sortOrder, isActive: true }));
+  }
+  await upsertCategory("general", "General", "General", 0);
+  const complianceCategory = await upsertCategory("compliance", "Compliance", "Cumplimiento", 1);
+
   const serviceRepository = AppDataSource.getRepository(ServiceEntity);
-  const documentService = await serviceRepository.save(serviceRepository.create({ name: "Construction Compliance Review", description: "Review and organize project compliance documents.", basePrice: "25000", isActive: true }));
-  const safetyService = await serviceRepository.findOne({ where: { name: "Site Safety Documentation" } }) ?? await serviceRepository.save(serviceRepository.create({ name: "Site Safety Documentation", description: "Prepare and review site safety records.", basePrice: "18000", isActive: true }));
+  // find-or-create (was an unconditional create that broke a second seed run on
+  // the services unique name constraint).
+  async function upsertService(name: string, descEn: string, descEs: string, basePrice: string) {
+    const existing = await serviceRepository.findOne({ where: { name } });
+    const row = existing ?? serviceRepository.create({ name });
+    row.nameEn = name; row.nameEs = name;
+    row.description = descEn; row.descriptionEn = descEn; row.descriptionEs = descEs;
+    row.basePrice = basePrice; row.isActive = true; row.categoryId = complianceCategory.id;
+    return serviceRepository.save(row);
+  }
+  const documentService = await upsertService("Construction Compliance Review", "Review and organize project compliance documents.", "Revisión y organización de documentos de cumplimiento del proyecto.", "25000");
+  const safetyService = await upsertService("Site Safety Documentation", "Prepare and review site safety records.", "Preparación y revisión de registros de seguridad del sitio.", "18000");
 
   const industryRepository = AppDataSource.getRepository(IndustryEntity);
   const industry = await industryRepository.findOne({ where: { name: "Construction" } }) ?? await industryRepository.save(industryRepository.create({ name: "Construction", description: "General construction and contracting.", priceWeight: "1" }));
@@ -65,6 +91,11 @@ async function seed() {
   packageEntity.type = "compliance";
   packageEntity.price = "40000";
   packageEntity.durationDays = 30;
+  packageEntity.nameEn = "Core Compliance Package";
+  packageEntity.nameEs = "Paquete Básico de Cumplimiento";
+  packageEntity.descriptionEn = "Core compliance documentation package.";
+  packageEntity.descriptionEs = "Paquete básico de documentación de cumplimiento.";
+  packageEntity.categoryId = complianceCategory.id;
   packageEntity.services = [documentService, safetyService];
   await packageRepository.save(packageEntity);
 

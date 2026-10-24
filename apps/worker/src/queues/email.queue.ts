@@ -27,8 +27,10 @@ export async function closeEmailQueue(): Promise<void> {
 
 export interface EmailJobData {
 	to: string;
-		templateName: "document-approved" | "document-rejected" | "quotation-ready" | "quotation-accepted" | "quotation-rejected" | "invoice" | "payment-recorded" | "renewal-reminder";
+		templateName: "document-approved" | "document-rejected" | "quotation-ready" | "quotation-accepted" | "quotation-rejected" | "invoice" | "payment-recorded" | "renewal-reminder" | "contact-inquiry" | "phase-completed" | "phase-rejected" | "account-approved";
 	subject?: string;
+	/** Which localized template to render; defaults to es-MX when absent. */
+	locale?: "en" | "es-MX";
 	data: Record<string, unknown>;
 }
 

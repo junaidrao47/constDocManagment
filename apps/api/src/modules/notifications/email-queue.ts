@@ -18,8 +18,14 @@ export interface EmailJobData {
     | "quotation-rejected"
     | "invoice"
     | "payment-recorded"
-    | "renewal-reminder";
+    | "renewal-reminder"
+    | "contact-inquiry"
+    | "phase-completed"
+    | "phase-rejected"
+    | "account-approved";
   subject?: string;
+  /** Which localized template the worker renders; defaults to es-MX when absent. */
+  locale?: "en" | "es-MX";
   data: Record<string, unknown>;
 }
 

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { UserRole } from "../modules/users/user.entity";
+import { AppError } from "../utils/http-error";
 
 /**
  * Role gate for a route.
@@ -13,11 +14,11 @@ import { UserRole } from "../modules/users/user.entity";
  * than from the token — so a demotion is honoured here, not fifteen minutes later.
  */
 export function authorize(...roles: UserRole[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
     const role = req.user?.role;
 
     if (!role || !roles.includes(role)) {
-      res.status(403).json({ success: false, error: "Forbidden" });
+      next(new AppError("FORBIDDEN", 403, "Forbidden"));
       return;
     }
 

@@ -1,20 +1,33 @@
 import { NextFunction, Request, Response, Router } from "express";
+import multer from "multer";
+import path from "path";
 import { validate, validateParams, validateQuery } from "../../middleware/validate";
 import { HttpError } from "../../utils/http-error";
 import { CreateUserSchema, UpdateUserSchema } from "../users/user.schema";
 import { adminUserService, ListUsersQuery } from "./admin-user.service";
 import { ListUsersQuerySchema, SetUserStatusSchema, UserIdParamSchema } from "./admin.schema";
+import { adminCustomerService } from "./admin-customer.service";
+import { ListCustomersQuerySchema, ApproveCustomerSchema, ReassignManagerSchema, type ListCustomersQuery } from "./admin-customer.schema";
+import { adminAnalyticsService } from "./admin-analytics.service";
+import { AnalyticsQuerySchema, type AnalyticsQuery } from "./admin-analytics.schema";
 import { AdminEmailSchema } from "./admin-email.schema";
 import { sendEmail } from "../../utils/email";
 import { quotationService } from "../quotations/quotation.service";
 import { QuotationIdParamSchema, QuotationListQuerySchema, QuotationStatusSchema, StaffQuotationCreateSchema, type QuotationListQuery } from "../quotations/quotation.schema";
-import { PackageIdParamSchema, PackageSchema } from "../packages/package.schema";
+import { PackageIdParamSchema, PackageSchema, PackageStatusSchema } from "../packages/package.schema";
 import { packageService } from "../packages/package.service";
 import { adminPricingService } from "./admin-pricing.service";
 import { invoiceService } from "../payments/invoice.service";
 import { InvoiceIdParamSchema, InvoiceListQuerySchema, PaymentCreateSchema } from "../payments/invoice.schema";
 import { DocumentIdParamSchema, AdminDocumentListQuerySchema, AdminUpdateDocumentStatusSchema } from "../documents/document.schema";
 import { documentService } from "../documents/document.service";
+import { requirementService } from "../documents/requirement.service";
+import {
+  RequirementCreateSchema,
+  RequirementUpdateSchema,
+  RequirementIdParamSchema,
+  ServiceIdParamSchema,
+} from "../documents/requirement.schema";
 import {
   IndustryCreateSchema,
   IndustryUpdateSchema,
@@ -61,6 +74,39 @@ function parseIsActive(query: Record<string, unknown>): boolean | undefined {
   return undefined;
 }
 
+// ─── Image upload (packages) ──────────────────────────────────────────────────
+// Mirrors the catalog image middleware: memory storage, single file, JPG/PNG/WebP,
+// 8MB ceiling. Stored via packageService.setImage → the shared catalog object store.
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_IMAGES: Record<string, string[]> = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+};
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMAGE_BYTES, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extensions = ALLOWED_IMAGES[file.mimetype];
+    if (!extensions || !extensions.includes(path.extname(file.originalname).toLowerCase())) {
+      callback(new HttpError(415, "Only JPG, PNG, and WebP images are allowed"));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
+function uploadImage(req: Request, res: Response, next: NextFunction): void {
+  imageUpload.single("image")(req, res, (error: unknown) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      next(new HttpError(413, "Image exceeds the 8MB limit"));
+      return;
+    }
+    next(error);
+  });
+}
+
 // ─── Users ───────────────────────────────────────────────────────────────────
 
 adminRouter.get(
@@ -93,6 +139,37 @@ adminRouter.patch(
   validateParams(UserIdParamSchema),
   validate(SetUserStatusSchema),
   send((req) => adminUserService.setUserStatus(req.params.id, req.body.isActive, actorId(req))),
+);
+
+// ─── Customers: approval lifecycle + manager assignment ───────────────────────
+
+adminRouter.get(
+  "/customers",
+  validateQuery(ListCustomersQuerySchema),
+  send((req) => adminCustomerService.listCustomers(req.query as unknown as ListCustomersQuery)),
+);
+adminRouter.get("/managers", send(() => adminCustomerService.listManagers()));
+adminRouter.post(
+  "/customers/:id/approve",
+  validateParams(UserIdParamSchema),
+  validate(ApproveCustomerSchema),
+  send((req) => adminCustomerService.approve(req.params.id, req.body.managerId, actorId(req))),
+);
+adminRouter.post(
+  "/customers/:id/suspend",
+  validateParams(UserIdParamSchema),
+  send((req) => adminCustomerService.suspend(req.params.id, actorId(req))),
+);
+adminRouter.post(
+  "/customers/:id/reactivate",
+  validateParams(UserIdParamSchema),
+  send((req) => adminCustomerService.reactivate(req.params.id, actorId(req))),
+);
+adminRouter.post(
+  "/customers/:id/manager",
+  validateParams(UserIdParamSchema),
+  validate(ReassignManagerSchema),
+  send((req) => adminCustomerService.reassignManager(req.params.id, req.body.managerId, req.body.reason, actorId(req))),
 );
 
 // ─── Notifications ───────────────────────────────────────────────────────────
@@ -146,6 +223,12 @@ adminRouter.get("/packages", send(() => packageService.list()));
 adminRouter.get("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.get(req.params.id)));
 adminRouter.post("/packages", validate(PackageSchema), send((req) => packageService.create(req.body), 201));
 adminRouter.patch("/packages/:id", validateParams(PackageIdParamSchema), validate(PackageSchema), send((req) => packageService.update(req.params.id, req.body)));
+adminRouter.patch("/packages/:id/status", validateParams(PackageIdParamSchema), validate(PackageStatusSchema), send((req) => packageService.setStatus(req.params.id, req.body.isActive)));
+adminRouter.post("/packages/:id/image", validateParams(PackageIdParamSchema), uploadImage, send(async (req) => {
+  if (!req.file) throw new HttpError(400, "image is required");
+  return packageService.setImage(req.params.id, { buffer: req.file.buffer, originalName: req.file.originalname, mimeType: req.file.mimetype });
+}, 201));
+adminRouter.delete("/packages/:id/image", validateParams(PackageIdParamSchema), send((req) => packageService.removeImage(req.params.id)));
 adminRouter.delete("/packages/:id", validateParams(PackageIdParamSchema), send((req) => packageService.remove(req.params.id)));
 
 // ─── Pricing: Services ───────────────────────────────────────────────────────
@@ -258,6 +341,36 @@ adminRouter.put(
   send((req) => adminPricingService.updateSetting(req.params.key, req.body.value, actorId(req))),
 );
 
+// ─── Required-documents checklist (per service) ───────────────────────────────
+
+adminRouter.get(
+  "/services/:serviceId/requirements",
+  validateParams(ServiceIdParamSchema),
+  send((req) => requirementService.listForService(req.params.serviceId)),
+);
+adminRouter.post(
+  "/services/:serviceId/requirements",
+  validateParams(ServiceIdParamSchema),
+  validate(RequirementCreateSchema),
+  send((req) => requirementService.create(req.params.serviceId, req.body), 201),
+);
+adminRouter.get(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  send((req) => requirementService.get(req.params.id)),
+);
+adminRouter.patch(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  validate(RequirementUpdateSchema),
+  send((req) => requirementService.update(req.params.id, req.body)),
+);
+adminRouter.delete(
+  "/requirements/:id",
+  validateParams(RequirementIdParamSchema),
+  send((req) => requirementService.remove(req.params.id)),
+);
+
 // ─── Placeholders ───────────────────────────────────────────────────────────
 
 adminRouter.get(
@@ -285,7 +398,15 @@ adminRouter.get("/subscriptions", (_req, res) => {
   res.json({ success: true, data: [], message: "not implemented" });
 });
 
-/** Phase 6: reporting. */
+// ─── Analytics (PROJECT-BRIEF §11.9) ──────────────────────────────────────────
+
+adminRouter.get(
+  "/analytics/overview",
+  validateQuery(AnalyticsQuerySchema),
+  send((req) => adminAnalyticsService.overview(req.query as unknown as AnalyticsQuery)),
+);
+
+/** Legacy bare stub retained; frontends must use /analytics/overview. */
 adminRouter.get("/analytics", (_req, res) => {
   res.json({ success: true, data: {}, message: "not implemented" });
 });

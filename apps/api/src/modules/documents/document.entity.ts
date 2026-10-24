@@ -40,6 +40,16 @@ export class DocumentEntity extends AppBaseEntity {
 	@Column({ name: "approved_uploaded_at", type: "timestamptz", nullable: true })
 	approvedUploadedAt?: Date | null;
 
+	// The latest ready, non-official version — the customer's current submission.
+	// Nullable: a document exists from the moment an upload target is issued, before
+	// any version is confirmed ready.
+	@Column({ name: "current_version_id", type: "uuid", nullable: true })
+	currentVersionId?: string | null;
+
+	// Which service-required-document (checklist item) this document satisfies, if any.
+	@Column({ name: "requirement_id", type: "uuid", nullable: true })
+	requirementId?: string | null;
+
 	@Column({
 		type: "enum",
 		enum: DocumentStatus, enumName: "document_status_enum",
@@ -49,6 +59,10 @@ export class DocumentEntity extends AppBaseEntity {
 
 	@Column({ name: "expires_at", type: "timestamptz", nullable: true })
 	expiresAt?: Date | null;
+
+	// Manager's target date for the whole document's government approval (PROJECT-BRIEF §11.5).
+	@Column({ name: "target_date", type: "timestamptz", nullable: true })
+	targetDate?: Date | null;
 
 	@OneToMany(() => DocumentStatusHistoryEntity, (history: DocumentStatusHistoryEntity) => history.document)
 	statusHistory?: DocumentStatusHistoryEntity[];

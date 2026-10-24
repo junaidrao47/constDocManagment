@@ -4,15 +4,27 @@ import { z } from "zod";
 
 export const ServiceCreateSchema = z.object({
   name: z.string().trim().min(1).max(150),
+  // Bilingual display copy. nameEn is required; nameEs defaults to nameEn in the
+  // service layer when omitted (same rule the migration backfill uses).
+  nameEn: z.string().trim().min(1).max(150),
+  nameEs: z.string().trim().min(1).max(150).optional(),
+  descriptionEn: z.string().trim().max(2000).nullable().optional(),
+  descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99),
+  categoryId: z.string().uuid(),
   isActive: z.boolean().optional().default(true),
 });
 
 export const ServiceUpdateSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
+  nameEn: z.string().trim().min(1).max(150).optional(),
+  nameEs: z.string().trim().min(1).max(150).optional(),
+  descriptionEn: z.string().trim().max(2000).nullable().optional(),
+  descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99).optional(),
+  categoryId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -81,7 +93,7 @@ export const LocationUpdateSchema = z.object({
 
 // --- Settings ---
 
-const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days"] as const;
+const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days", "contact_recipient_email"] as const;
 export type SettingKey = (typeof ALLOWED_KEYS)[number];
 
 export const SettingKeyParamSchema = z.object({
@@ -105,6 +117,12 @@ export const SettingUpdateSchema = z.discriminatedUnion("key", [
   z.object({
     key: z.literal("payment_terms_days"),
     value: z.coerce.number().int().min(1).max(365),
+  }),
+  z.object({
+    // Where the public contact form delivers inquiries. Validated as an email so a typo
+    // cannot silently break delivery.
+    key: z.literal("contact_recipient_email"),
+    value: z.string().trim().email("must be a valid email address").max(254),
   }),
 ]);
 

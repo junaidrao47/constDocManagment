@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response, Router } from "express";
 import { authorize } from "../../middleware/authorize";
+import { AppError } from "../../utils/http-error";
 import { UserRole } from "../users/user.entity";
 import { documentService } from "../documents/document.service";
 import { DocumentStatus } from "../documents/document-status";
@@ -17,7 +18,7 @@ agentRouter.patch("/quotations/:id/status", authorize(UserRole.Agent, UserRole.M
 agentRouter.get("/documents", authorize(UserRole.Agent, UserRole.Manager), (req: Request, res: Response, next: NextFunction) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   if (status && !Object.values(DocumentStatus).includes(status as DocumentStatus)) {
-    res.status(400).json({ success: false, error: "Invalid document status", code: 400 });
+    next(new AppError("VALIDATION_FAILED", 400, "Invalid document status"));
     return;
   }
   documentService.listReviewDocuments({ id: req.user!.id, role: req.user!.role }, status).then((data) => res.json({ success: true, data, message: "ok" })).catch(next);

@@ -32,17 +32,42 @@ function seedSetting(key: string, value: unknown) {
 describe("admin services CRUD", () => {
   it("creates a service", async () => {
     const token = await adminToken();
+    const categoryId = "11111111-1111-4111-8111-111111111111";
+    fakeDb.categories().seed({ id: categoryId, slug: "general", nameEn: "General", nameEs: "General", sortOrder: 0, isActive: true });
     const res = await request(testApp())
       .post("/api/admin/services")
       .set("Authorization", token)
-      .send({ name: "Fire Safety Audit", description: "Audit", basePrice: 1500 });
+      .send({ name: "Fire Safety Audit", nameEn: "Fire Safety Audit", description: "Audit", basePrice: 1500, categoryId });
     expect(res.status).toBe(201);
     expect(res.body.data).toMatchObject({
       name: "Fire Safety Audit",
       description: "Audit",
       basePrice: 1500,
       isActive: true,
+      categoryId,
     });
+  });
+
+  it("rejects a service whose category does not exist", async () => {
+    const token = await adminToken();
+    const res = await request(testApp())
+      .post("/api/admin/services")
+      .set("Authorization", token)
+      .send({ name: "No Category", nameEn: "No Category", basePrice: 1500, categoryId: "22222222-2222-4222-8222-222222222222" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("CATEGORY_NOT_FOUND");
+  });
+
+  it("rejects a service whose category is inactive", async () => {
+    const token = await adminToken();
+    const categoryId = "33333333-3333-4333-8333-333333333333";
+    fakeDb.categories().seed({ id: categoryId, slug: "retired", nameEn: "Retired", nameEs: "Retirada", sortOrder: 0, isActive: false });
+    const res = await request(testApp())
+      .post("/api/admin/services")
+      .set("Authorization", token)
+      .send({ name: "Inactive Cat", nameEn: "Inactive Cat", basePrice: 1500, categoryId });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("CATEGORY_INACTIVE");
   });
 
   it("lists services including inactive when not filtered, and filters by isActive", async () => {
@@ -222,7 +247,7 @@ describe("admin worker-ranges CRUD and overlap rules", () => {
       .set("Authorization", token)
       .send({ minWorkers: 20, maxWorkers: 10, basePrice: 1000 });
     expect(res.status).toBe(400);
-    expect(res.body.error ?? res.body.message).toMatch(/minWorkers/);
+    expect(res.body.error?.message ?? res.body.message).toMatch(/minWorkers/);
   });
 
   it("rejects overlap with other active ranges", async () => {
@@ -235,7 +260,7 @@ describe("admin worker-ranges CRUD and overlap rules", () => {
       .set("Authorization", token)
       .send({ minWorkers: 5, maxWorkers: 15, basePrice: 2000 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/overlaps/i);
+    expect(res.body.error.message).toMatch(/overlaps/i);
   });
 
   it("allows non-overlapping adjacent active ranges", async () => {
@@ -269,7 +294,7 @@ describe("admin worker-ranges CRUD and overlap rules", () => {
       .set("Authorization", token)
       .send({ minWorkers: 200, maxWorkers: null, basePrice: 9000 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/highest active range/i);
+    expect(res.body.error.message).toMatch(/highest active range/i);
   });
 
   it("only the highest range may have null max (rejects open-ended when higher range exists)", async () => {
@@ -281,7 +306,7 @@ describe("admin worker-ranges CRUD and overlap rules", () => {
       .set("Authorization", token)
       .send({ minWorkers: 50, maxWorkers: null, basePrice: 9000 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/highest active range/i);
+    expect(res.body.error.message).toMatch(/highest active range/i);
   });
 
   it("rejects non-admin with 403", async () => {
@@ -563,7 +588,7 @@ describe("pricing engine: industry weight and dynamic settings", () => {
       industryId: crypto.randomUUID(),
     });
     expect(missingRes.status).toBe(404);
-    expect(missingRes.body.error).toMatch(/industry/i);
+    expect(missingRes.body.error.message).toMatch(/industry/i);
 
     const inactiveId = crypto.randomUUID();
     fakeDb.industries().seed({ id: inactiveId, name: "Inactive", priceWeight: "1.0000", isActive: false });
@@ -574,7 +599,7 @@ describe("pricing engine: industry weight and dynamic settings", () => {
       industryId: inactiveId,
     });
     expect(inactiveRes.status).toBe(404);
-    expect(inactiveRes.body.error).toMatch(/industry/i);
+    expect(inactiveRes.body.error.message).toMatch(/industry/i);
   });
 
   it("rejects worker counts that fall into a gap between ranges", async () => {
@@ -593,7 +618,7 @@ describe("pricing engine: industry weight and dynamic settings", () => {
     });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/worker range/i);
+    expect(res.body.error.message).toMatch(/worker range/i);
   });
 
   it("uses the currency setting in the quotation Sent email when the quotation has none", async () => {

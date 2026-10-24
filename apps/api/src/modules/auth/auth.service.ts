@@ -10,7 +10,7 @@ import { logger } from "../../utils/logger";
 import { sendEmail } from "../../utils/email";
 import { resolveWebUrl } from "../../utils/web-url";
 import { RefreshTokenEntity } from "../../entities/refresh-token.entity";
-import { UserEntity, UserRole } from "../users/user.entity";
+import { AccountStatus, UserEntity, UserRole } from "../users/user.entity";
 import {
   consumePasswordResetToken,
   invalidateAllSessions,
@@ -85,6 +85,8 @@ function sanitizeUser(user: UserEntity) {
     phone: user.phone ?? null,
     role: user.role,
     isActive: user.isActive,
+    accountStatus: user.accountStatus,
+    preferredLocale: user.preferredLocale,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -190,13 +192,18 @@ export const authService = {
       throw new HttpError(409, "Email already exists");
     }
 
+    const role = input.role ?? UserRole.Customer;
     const user = userRepository.create({
       email: input.email,
       passwordHash: await bcrypt.hash(input.password, 12),
-      role: input.role ?? UserRole.Customer,
+      role,
       name: input.name ?? null,
       phone: input.phone ?? null,
       isActive: true,
+      // Self-registration only ever creates customers (the schema pins the role), and
+      // they must wait for an admin to approve the account before using the portal.
+      // The DB default keeps staff created elsewhere `approved`.
+      accountStatus: role === UserRole.Customer ? AccountStatus.PendingApproval : AccountStatus.Approved,
     });
 
     const savedUser = await userRepository.save(user);

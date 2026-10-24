@@ -12,6 +12,9 @@ import { QuotationEntity } from "../../src/modules/quotations/quotation.entity";
 import { QuotationItemEntity } from "../../src/entities/quotation-item.entity";
 import { AppSettingEntity } from "../../src/entities/app-setting.entity";
 import { AgentCustomerAssignmentEntity } from "../../src/entities/agent-customer-assignment.entity";
+import { CategoryEntity } from "../../src/modules/categories/category.entity";
+import { DocumentVersionEntity } from "../../src/modules/documents/document-version.entity";
+import { ServiceRequiredDocumentEntity } from "../../src/modules/documents/service-required-document.entity";
 import { FakeRepository } from "./fake-repository";
 
 /**
@@ -62,6 +65,12 @@ export const AppDataSource = {
       // included, exactly what a service would receive from Postgres.
       created.defineRelation("customer", (row) =>
         AppDataSource.getRepository(UserEntity).all().find((user) => user.id === row.customerId),
+      );
+    }
+    if (target === ServiceEntity || target === PackageEntity) {
+      // Mirrors TypeORM `relations: { category: true }` for the public endpoints.
+      created.defineRelation("category", (row) =>
+        AppDataSource.getRepository(CategoryEntity).all().find((category) => category.id === row.categoryId),
       );
     }
     repositories.set(target, created);
@@ -130,6 +139,9 @@ export const fakeDb = {
   quotationItems: () => AppDataSource.getRepository(QuotationItemEntity),
   appSettings: () => AppDataSource.getRepository(AppSettingEntity),
   assignments: () => AppDataSource.getRepository(AgentCustomerAssignmentEntity),
+  categories: () => AppDataSource.getRepository(CategoryEntity),
+  documentVersions: () => AppDataSource.getRepository(DocumentVersionEntity),
+  serviceRequiredDocuments: () => AppDataSource.getRepository(ServiceRequiredDocumentEntity),
 };
 
 export function resetFakeDatabase(): void {

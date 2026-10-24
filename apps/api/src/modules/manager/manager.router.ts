@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response, Router } from "express";
+import { z } from "zod";
 import { validate, validateParams, validateQuery } from "../../middleware/validate";
 import { HttpError } from "../../utils/http-error";
 import { assignmentService } from "../assignments/assignment.service";
@@ -8,6 +9,10 @@ import {
   AssignmentListQuerySchema,
   type AssignmentListQuery,
 } from "../assignments/assignment.schema";
+import { managerService } from "./manager.service";
+import { UserRole } from "../users/user.entity";
+
+const CustomerIdParamSchema = z.object({ id: z.string().uuid("must be a valid customer id") });
 
 /**
  * Manager oversight, split out of `/api/admin` so managers stop inheriting the
@@ -39,6 +44,25 @@ function actorId(req: Request): string {
 
   return req.user.id;
 }
+
+function actor(req: Request): { id: string; role: UserRole } {
+  if (!req.user) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  return { id: req.user.id, role: req.user.role };
+}
+
+// ── Workspace: my customers (PROJECT-BRIEF §11.8) ───────────────────────────────
+managerRouter.get(
+  "/customers",
+  send((req) => managerService.listCustomers(actor(req))),
+);
+
+managerRouter.get(
+  "/customers/:id",
+  validateParams(CustomerIdParamSchema),
+  send((req) => managerService.getCustomer(actor(req), req.params.id)),
+);
 
 managerRouter.get(
   "/assignments",

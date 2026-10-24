@@ -1,8 +1,9 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createPresignedPost, type PresignedPost } from "@aws-sdk/s3-presigned-post";
 import { env } from "../config/env";
 
 const STORAGE_ROOT = path.resolve(process.cwd(), "storage");
@@ -79,6 +80,23 @@ export async function removeCatalogObject(key: string): Promise<void> {
   }
 }
 
+/** Whether the stack is in S3 mode (vs local-disk fallback). Exposed for callers that branch. */
+export function isS3Mode(): boolean {
+  return isS3Configured() && Boolean(env.s3Bucket);
+}
+
+/** Server-side upload of a buffer we already hold (single-call convenience routes). */
+export async function putObject(params: { key: string; body: Buffer; contentType?: string }): Promise<void> {
+  if (isS3Configured() && env.s3Bucket) {
+    const client = createS3Client();
+    await client.send(
+      new PutObjectCommand({ Bucket: env.s3Bucket, Key: params.key, Body: params.body, ContentType: params.contentType }),
+    );
+    return;
+  }
+  await saveLocalDocument(params.body, params.key);
+}
+
 export async function saveLocalDocument(buffer: Buffer, key: string): Promise<string> {
   await ensureLocalDocumentStorage();
 
@@ -111,7 +129,12 @@ export async function getUploadUrl(params: { key: string; contentType?: string }
   return getSignedUrl(client, command, { expiresIn: 900 });
 }
 
-export async function getDownloadUrl(params: { key: string }): Promise<string | null> {
+export async function getDownloadUrl(params: {
+  key: string;
+  expiresIn?: number;
+  responseContentDisposition?: string;
+  responseContentType?: string;
+}): Promise<string | null> {
   if (!isS3Configured() || !env.s3Bucket) {
     return null;
   }
@@ -120,9 +143,94 @@ export async function getDownloadUrl(params: { key: string }): Promise<string | 
   const command = new GetObjectCommand({
     Bucket: env.s3Bucket,
     Key: params.key,
+    ResponseContentDisposition: params.responseContentDisposition,
+    ResponseContentType: params.responseContentType,
   });
 
-  return getSignedUrl(client, command, { expiresIn: 900 });
+  return getSignedUrl(client, command, { expiresIn: params.expiresIn ?? 900 });
+}
+
+export interface PresignedUploadPost {
+  url: string;
+  fields: Record<string, string>;
+}
+
+/**
+ * A presigned POST (not PUT), so S3 itself enforces an exact Content-Type and a
+ * `content-length-range` ceiling at upload time — a presigned PUT can enforce
+ * neither. Returns `null` in local mode so the caller falls back to a local URL.
+ */
+export async function createUploadPost(params: {
+  key: string;
+  contentType: string;
+  maxBytes: number;
+}): Promise<PresignedUploadPost | null> {
+  if (!isS3Configured() || !env.s3Bucket) {
+    return null;
+  }
+
+  const client = createS3Client();
+  const presigned: PresignedPost = await createPresignedPost(client, {
+    Bucket: env.s3Bucket,
+    Key: params.key,
+    Conditions: [
+      ["content-length-range", 1, params.maxBytes],
+      ["eq", "$Content-Type", params.contentType],
+    ],
+    Fields: { "Content-Type": params.contentType },
+    Expires: 900,
+  });
+
+  return { url: presigned.url, fields: presigned.fields };
+}
+
+/** Object size + content type, or null when the object is not present yet. */
+export async function headObject(params: { key: string }): Promise<{ size: number; contentType: string | null } | null> {
+  if (isS3Configured() && env.s3Bucket) {
+    const client = createS3Client();
+    try {
+      const result = await client.send(new HeadObjectCommand({ Bucket: env.s3Bucket, Key: params.key }));
+      return { size: Number(result.ContentLength ?? 0), contentType: result.ContentType ?? null };
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const stat = await fs.stat(getLocalDocumentPath(params.key));
+    return { size: stat.size, contentType: null };
+  } catch {
+    return null;
+  }
+}
+
+/** The first `end + 1` bytes of an object, for a magic-byte check. */
+export async function getObjectRange(params: { key: string; end: number }): Promise<Buffer | null> {
+  if (isS3Configured() && env.s3Bucket) {
+    const client = createS3Client();
+    try {
+      const result = await client.send(
+        new GetObjectCommand({ Bucket: env.s3Bucket, Key: params.key, Range: `bytes=0-${params.end}` }),
+      );
+      const bytes = await result.Body?.transformToByteArray();
+      return bytes ? Buffer.from(bytes) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const handle = await fs.open(getLocalDocumentPath(params.key), "r");
+    try {
+      const buffer = Buffer.alloc(params.end + 1);
+      const { bytesRead } = await handle.read(buffer, 0, params.end + 1, 0);
+      return buffer.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 export function buildLocalUploadUrl(documentId: string): string {

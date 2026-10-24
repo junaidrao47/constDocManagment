@@ -256,6 +256,18 @@ export class FakeRepository<T extends Row> {
     return { affected };
   }
 
+  /** Mirrors TypeORM `repository.remove(entity)`, which deletes by identity. */
+  async remove(input: T | T[]): Promise<T | T[]> {
+    const list = Array.isArray(input) ? input : [input];
+    for (const entity of list) {
+      const id = (entity as Row).id;
+      if (id === undefined) continue;
+      const index = this.rows.findIndex((existing) => existing.id === id);
+      if (index !== -1) this.rows.splice(index, 1);
+    }
+    return input;
+  }
+
   async delete(criteria: Row): Promise<{ affected: number }> {
     const remaining = this.rows.filter((row) => !matchesWhere(row, criteria));
     const affected = this.rows.length - remaining.length;

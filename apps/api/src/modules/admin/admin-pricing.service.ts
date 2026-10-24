@@ -5,6 +5,7 @@ import { LocationEntity } from "../../entities/location.entity";
 import { ServiceEntity } from "../../entities/service.entity";
 import { WorkerRangeEntity } from "../../entities/worker-range.entity";
 import { HttpError } from "../../utils/http-error";
+import { categoryService } from "../categories/category.service";
 
 // ─── small helper ────────────────────────────────────────────────────────────
 
@@ -19,8 +20,13 @@ function serializeService(s: ServiceEntity) {
     id: s.id,
     name: s.name,
     description: s.description ?? null,
+    nameEn: s.nameEn,
+    nameEs: s.nameEs,
+    descriptionEn: s.descriptionEn ?? null,
+    descriptionEs: s.descriptionEs ?? null,
     basePrice: n(s.basePrice),
     isActive: s.isActive,
+    categoryId: s.categoryId,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
   };
@@ -144,15 +150,25 @@ async function findLocationOr404(id: string): Promise<LocationEntity> {
 
 export interface ServiceInput {
   name: string;
+  nameEn: string;
+  nameEs?: string;
+  descriptionEn?: string | null;
+  descriptionEs?: string | null;
   description?: string | null;
   basePrice: number;
+  categoryId: string;
   isActive?: boolean;
 }
 
 export interface ServicePatch {
   name?: string;
+  nameEn?: string;
+  nameEs?: string;
+  descriptionEn?: string | null;
+  descriptionEs?: string | null;
   description?: string | null;
   basePrice?: number;
+  categoryId?: string;
   isActive?: boolean;
 }
 
@@ -218,11 +234,17 @@ export const adminPricingService = {
   },
 
   async createService(input: ServiceInput) {
+    await categoryService.assertActiveCategory(input.categoryId);
     const repo = AppDataSource.getRepository(ServiceEntity);
     const entity = repo.create({
       name: input.name,
+      nameEn: input.nameEn,
+      nameEs: input.nameEs ?? input.nameEn,
+      descriptionEn: input.descriptionEn ?? null,
+      descriptionEs: input.descriptionEs ?? input.descriptionEn ?? null,
       description: input.description ?? null,
       basePrice: input.basePrice.toFixed(2),
+      categoryId: input.categoryId,
       isActive: input.isActive ?? true,
     });
     const saved = await repo.save(entity);
@@ -232,7 +254,15 @@ export const adminPricingService = {
   async updateService(id: string, patch: ServicePatch) {
     const repo = AppDataSource.getRepository(ServiceEntity);
     const entity = await findServiceOr404(id);
+    if (patch.categoryId !== undefined) {
+      await categoryService.assertActiveCategory(patch.categoryId);
+      entity.categoryId = patch.categoryId;
+    }
     if (patch.name !== undefined) entity.name = patch.name;
+    if (patch.nameEn !== undefined) entity.nameEn = patch.nameEn;
+    if (patch.nameEs !== undefined) entity.nameEs = patch.nameEs;
+    if (patch.descriptionEn !== undefined) entity.descriptionEn = patch.descriptionEn ?? null;
+    if (patch.descriptionEs !== undefined) entity.descriptionEs = patch.descriptionEs ?? null;
     if (patch.description !== undefined) entity.description = patch.description ?? null;
     if (patch.basePrice !== undefined) entity.basePrice = patch.basePrice.toFixed(2);
     if (patch.isActive !== undefined) entity.isActive = patch.isActive;

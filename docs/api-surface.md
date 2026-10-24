@@ -10,10 +10,28 @@ Status markers used throughout:
 - **NEW** — does not exist yet
 - **FIX** — exists but is wrong; see the note
 
-All responses use the existing envelope: `{ success: boolean, data: T, message: string }`.
 All request bodies are validated with zod per AGENT.md rule 6. All list endpoints take
 `?page`, `?limit`, `?sort`, and their own filters; pagination is omitted from the tables
 below to keep them readable.
+
+### Response envelopes
+
+Success (2xx) — unchanged:
+
+```json
+{ "success": true, "data": <T>, "message": "ok" }
+```
+
+Failure (every non-2xx) — one shape, emitted by the central error handler:
+
+```json
+{ "success": false, "error": { "code": "DOCUMENT_LOCKED", "message": "<English, for devs/logs>", "details": { "field": ["..."] }, "requestId": "<uuid>" } }
+```
+
+- `code` is a stable string the frontend branches on and localises; the full list is in `docs/error-codes.md`.
+- `message` is English, written for a developer and safe to surface; it never contains a stack, SQL, or an internal name.
+- `details` is present only for validation failures and carries Zod's per-field errors.
+- `requestId` ties the response to the server log. Every request accepts an inbound **`x-request-id`** header (a token matching `^[A-Za-z0-9._-]{1,128}$`, otherwise a fresh UUID is generated) and returns it in the **`x-request-id`** response header.
 
 ---
 
@@ -85,8 +103,9 @@ so it should be cached and rate-limited more tightly than the authenticated rout
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
-| GET | `/services` | STUB | Active services with prices for the Services page |
-| GET | `/packages` | STUB | Active packages with their bundled services |
+| GET | `/categories` | DONE | Active categories, ordered by `sortOrder`, each with `serviceCount`/`packageCount` |
+| GET | `/services` | DONE | Active services with prices. Accepts `?category=<slug>`; each item carries a `category` object |
+| GET | `/packages` | DONE | Active packages with bundled services. Accepts `?category=<slug>`; each item carries a `category` object |
 | GET | `/packages/:id` | NEW | Single package detail |
 | GET | `/industries` | NEW | Industry list for the calculator's first input |
 | GET | `/locations/states` | NEW | Distinct states |
@@ -101,6 +120,13 @@ so it should be cached and rate-limited more tightly than the authenticated rout
 
 Phases 3 and 6. Note that `industryId` is accepted by the pricing engine and never used in
 the formula, so the industry selector has no effect on price until Phase 3 adds a weight.
+
+**Localization.** The category, service and package lists resolve `name`/`description` to one
+language by the `Accept-Language` header — Spanish (`es-MX`) is the default, English the
+fallback (a header whose first tag starts with `en` selects English). The `category` object
+embedded on each service/package item is `{ id, slug, name, description, icon, imageUrl }`,
+already resolved to the chosen language. A `?category=<slug>` that matches no active category
+returns an empty list.
 
 ---
 
@@ -117,18 +143,29 @@ Profile and dashboard:
 | PATCH | `/api/users/me` | DONE | Update name, phone, email with a uniqueness check |
 | GET | `/me/dashboard` | NEW | Scope §5 dashboard: active services, documents needing attention, next renewal, unpaid invoices, recent activity |
 
-Documents (scope §5, §6):
+Documents (scope §5, §6). The upload pipeline is version-based: a document owns many
+`document_versions` (`customer` / `staff_on_behalf` / `official`), and `upload-url` /
+`upload-intent` issue a two-step intent that `confirm` finalises (HEAD + size + allow-list
++ magic bytes, then the role transition, history and email in one transaction). Statuses
+and allowed transitions are served by the API, never hardcoded by a frontend.
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
+| GET | `/api/documents/statuses` | DONE | The status contract: every status + display key, and allowed transitions by role. Any authenticated role |
 | GET | `/me/documents` | DONE | Own documents with signed download URLs |
-| GET | `/api/documents/:id` | DONE | Single document. Status history arrives with the shared audit trail in Phase 2 |
-| POST | `/api/documents/upload-url` | DONE | Create a `pending` row, return a presigned S3 PUT or a local fallback URL |
-| POST | `/api/documents/:id/upload` | DONE | Local multipart fallback, constrained by a MIME-plus-extension allow-list and a 25MB ceiling |
-| GET | `/api/documents/:id/download-url` | DONE | Signed, time-limited download URL |
-| GET | `/api/documents/:id/download` | DONE | Redirect to S3, or stream the local file |
-| DELETE | `/api/documents/:id` | NEW | Withdraw an upload, permitted only while `pending` |
-| GET | `/me/documents/expiring` | NEW | Documents in `expiring_soon`, for the renewal prompt |
+| GET | `/me/checklist` | DONE | Purchased services with their required-documents, submitted state, status and completion % (`?locale=en\|es`) |
+| GET | `/api/documents/:id` | DONE | Single document (owner or staff) |
+| GET | `/api/documents/:id/history` | DONE | Full status + version audit trail |
+| POST | `/api/documents/upload-url` | DONE | Create a `pending` document + first version intent; returns a presigned S3 POST (`content-length-range` 1–25 MB, exact `Content-Type`) or a local URL |
+| POST | `/api/documents/:id/versions/upload-intent` | DONE | Intent for a NEW version (customer resubmission, or staff `staff_on_behalf`/`official`) |
+| POST | `/api/documents/:id/versions/:versionId/confirm` | DONE | Validate the bytes, mark the version ready, apply the transition |
+| POST | `/api/documents/:id/versions/:versionId/upload` | DONE | Local-mode byte sink for an intent |
+| GET | `/api/documents/:id/versions` | DONE | Ready versions (customers never see `staff_on_behalf`) |
+| GET | `/api/documents/:id/versions/:versionId/download-url` | DONE | Signed download (`attachment`); customers get the latest official file only once `approved` |
+| GET | `/api/documents/:id/versions/:versionId/preview-url` | DONE | Short-expiry inline URL for PDF/image preview |
+| POST | `/api/documents/:id/upload` | DONE | Single-call convenience upload (API holds the bytes, then runs confirm) |
+| POST | `/api/documents/:id/approved-upload` | DONE | Staff upload the official file; moves `submitted_to_government → approved` |
+| GET | `/api/documents/:id/download-url` · `/download` | DONE | Legacy single-file download (customer-portal UI) |
 
 Quotations (scope §6a lifecycle Draft → Sent → Under Review → Accepted → Expired):
 
@@ -232,10 +269,14 @@ Service catalogue (scope §7):
 
 | Method | Path | Status | Purpose |
 |---|---|---|---|
-| GET, POST | `/services` | DONE | List and create |
-| GET, PATCH, DELETE | `/services/:id` | DONE | Detail, update, deactivate |
-| GET, POST | `/packages` | DONE | List and create |
-| GET, PATCH, DELETE | `/packages/:id` | DONE | Detail, update, deactivate |
+| GET, POST | `/categories` | DONE | List all (any status), create. Create/update require a unique kebab-case `slug` + `nameEn`/`nameEs` |
+| POST | `/categories/reorder` | DONE | Body `{ orderedIds: string[] }` — sets `sortOrder` by position |
+| GET, PATCH, DELETE | `/categories/:id` | DONE | Detail, update, delete. Delete 409s `CATEGORY_NOT_EMPTY` if any service/package references it |
+| PATCH | `/categories/:id/status` | DONE | Activate/deactivate (`{ isActive }`), kept separate from edit |
+| GET, POST | `/services` | DONE | List and create. **Create now requires `categoryId`** (+ `nameEn`); the category must exist and be active |
+| GET, PATCH, DELETE | `/services/:id` | DONE | Detail, update, deactivate. Update accepts an optional `categoryId` (validated active) |
+| GET, POST | `/packages` | DONE | List and create. **Create now requires `categoryId`** (+ `nameEn`) |
+| GET, PATCH, DELETE | `/packages/:id` | DONE | Detail, update, deactivate. Update requires `categoryId` (full-body schema) |
 | PUT | `/packages/:id/services` | NEW | Replace the bundled service set (`package_services`) |
 | GET, POST | `/industries` | DONE | List and create |
 | GET, PATCH, DELETE | `/industries/:id` | DONE | Includes the pricing weight added in Phase 3 |
@@ -260,12 +301,21 @@ Quotations, documents and categories:
 | GET | `/quotations/:id` | NEW | Detail with line items |
 | PATCH | `/quotations/:id/status` | NEW | Override the lifecycle status |
 | GET | `/quotations/:id/history` | NEW | Audit trail |
-| GET | `/documents` | STUB | All documents, filterable by status, customer, category, expiry |
-| GET | `/documents/:id` | NEW | Detail with history |
-| PATCH | `/documents/:id/status` | STUB | Duplicate of the shared route; should delegate, not reimplement |
+| GET | `/documents` | DONE | All documents, filterable by status and customer, paginated |
+| PATCH | `/documents/:id/status` | DONE | Admin override transition (bypasses the role overlay; note ≥ 5 chars required) |
 | GET | `/documents/expiring` | NEW | Expiry pipeline view |
 | GET, POST | `/document-categories` | NEW | Scope §6 categorisation. No category column exists yet |
 | GET, PATCH, DELETE | `/document-categories/:id` | NEW | Manage the taxonomy |
+
+Required-documents checklist (scope §7.5 — admin manages the per-service checklist items):
+
+| Method | Path | Status | Purpose |
+|---|---|---|---|
+| GET | `/services/:serviceId/requirements` | DONE | List the required documents defined for a service |
+| POST | `/services/:serviceId/requirements` | DONE | Add a required document (bilingual name/description, `isRequired`, `sortOrder`, optional `allowedMimeTypes`) |
+| GET | `/requirements/:id` | DONE | One requirement |
+| PATCH | `/requirements/:id` | DONE | Edit a requirement |
+| DELETE | `/requirements/:id` | DONE | Remove a requirement |
 
 Subscriptions, invoices and payments (scope §9):
 
@@ -389,6 +439,59 @@ built against unpaginated responses is a rewrite of every table component.
 **404 versus 403.** For a record that exists but is not yours, return 403 on a direct fetch by
 id and omit it from lists. Returning an empty result for a direct fetch makes assignment bugs
 indistinguishable from missing data during Phase 4 debugging.
+
+## Account lifecycle, onboarding, document phases, analytics (2026-10-24) — DONE
+
+Account-approval gate: authenticated **customer** routes return 403 `ACCOUNT_PENDING` /
+`ACCOUNT_SUSPENDED` unless the account is `approved`. Exceptions: `/auth/*`, `GET /customers/me`,
+and `GET|PUT /customers/me/onboarding`. Staff are never gated. Enforced by
+`middleware/account-status.ts` on `/api/customers`, `/api/documents`, `/api/quotations`.
+
+Customer (self):
+- `GET /api/customers/me/onboarding` — profile + persona list + `completed` flag. **DONE**
+- `PUT /api/customers/me/onboarding` — upsert persona, legal/contact name, up to 3 validated
+  `notificationEmails` (the phase-email recipients), phone, state, city, needs, and `locale`
+  (sets `users.preferred_locale`). **DONE**
+- `GET /api/customers/me/dashboard` — now also returns `manager {id,name,email}|null` (the assigned
+  manager). **DONE**
+- `GET /api/customers/me/documents` — each document now also carries `service {id,nameEn,nameEs}|null`,
+  `progress {completed,total,percent}`, `phaseStatuses[]` (ordered), `targetDate`, `nextTargetDate`. **DONE**
+- Document versions: the owning customer may now also see and download `phase_result` files (not just the
+  official file); `staff_on_behalf` stays hidden. `GET /documents/:id/versions` +
+  `/versions/:versionId/{download,preview}-url`. **DONE**
+
+Admin (`/api/admin`, admin only):
+- `GET /customers?status=pending_approval&search=&page=&pageSize=` — customers with their
+  assigned `managerId`, plus `persona` + `city` from the onboarding profile (null until onboarded).
+  **DONE**
+- `GET /managers` — managers with their current assigned-customer count
+  (`{ id, name, email, customerCount }[]`), for the approve/reassign pickers. Read-only. **DONE**
+- `POST /customers/:id/approve` body `{ managerId }` — approve + assign manager (400
+  `MANAGER_REQUIRED` if absent); emails the customer. **DONE**
+- `POST /customers/:id/suspend` / `POST /customers/:id/reactivate` — flips `account_status`;
+  suspend ends live sessions. **DONE**
+- `POST /customers/:id/manager` body `{ managerId, reason }` — reassign; writes the log. **DONE**
+- `GET /analytics/overview?from=&to=` — KPIs/time-series (§11.9), SQL aggregates, Redis-cached 60s.
+  The bare `GET /analytics` stays a **STUB**. **DONE**
+
+Manager workspace (`/api/manager`, manager + admin):
+- `GET /manager/customers` — the caller's assigned customers with pending-doc counts + progress. **DONE**
+- `GET /manager/customers/:id` — profile + onboarding + subscriptions + documents (with progress)
+  + merged timeline; a manager only for their own customers. **DONE**
+
+Document phases (`/api/documents`, phase writes are manager-of-the-customer or admin):
+- `GET /documents/phases/statuses` — the phase status contract (any authenticated role). **DONE**
+- `GET /documents/:id` — now also returns `phases[]`, `progress {completed,total,percent}`,
+  `targetDate` (owning customer or staff). **DONE**
+- `POST /documents/:id/phases` body `{ phases?[], order? }` — create (append) and/or reorder. **DONE**
+- `PATCH /documents/:id/phases/:phaseId` — edit fields and/or move status (rejection needs a note);
+  writes history and emails the customer's onboarding addresses on completed/rejected. **DONE**
+- `POST /documents/:id/phases/:phaseId/result-upload-intent` → bytes via the existing
+  `POST /documents/:id/versions/:versionId/upload` → `POST /documents/:id/phases/:phaseId/result/:versionId/confirm`
+  — uploads the phase result (version kind `phase_result`) and completes the phase. **DONE**
+
+Phase/approval emails go through the existing `email` queue, localized (`en` / `es-MX`) via the
+worker's `<template>.<locale>.hbs` resolution and a shared `_layout.hbs` partial.
 
 
 

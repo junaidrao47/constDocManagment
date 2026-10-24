@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { AppDataSource } from "../../config/database";
 import { redisClient } from "../../config/redis";
 import { RefreshTokenEntity } from "../../entities/refresh-token.entity";
-import { UserEntity, UserRole } from "../users/user.entity";
+import { AccountStatus, UserEntity, UserLocale, UserRole } from "../users/user.entity";
 
 /**
  * Session state: the part of authentication that cannot live inside a JWT.
@@ -30,6 +30,9 @@ export interface SessionState {
   email: string;
   role: UserRole;
   isActive: boolean;
+  /** Carried here so the account-approval gate needs no extra DB read per request. */
+  accountStatus: AccountStatus;
+  preferredLocale: UserLocale;
   /** Epoch seconds; tokens issued before this are stale. 0 when never invalidated. */
   tokensValidFromSec: number;
 }
@@ -79,7 +82,7 @@ export async function loadSessionState(userId: string): Promise<SessionState | n
 
   const user = await AppDataSource.getRepository(UserEntity).findOne({
     where: { id: userId },
-    select: ["id", "email", "role", "isActive", "tokensValidFrom"],
+    select: ["id", "email", "role", "isActive", "accountStatus", "preferredLocale", "tokensValidFrom"],
   });
 
   const state: SessionState | null = user
@@ -88,6 +91,8 @@ export async function loadSessionState(userId: string): Promise<SessionState | n
         email: user.email,
         role: user.role,
         isActive: user.isActive,
+        accountStatus: user.accountStatus,
+        preferredLocale: user.preferredLocale,
         tokensValidFromSec: toEpochSeconds(user.tokensValidFrom),
       }
     : null;

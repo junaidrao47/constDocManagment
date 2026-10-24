@@ -103,16 +103,19 @@ describe("document access for the people who review documents", () => {
   it("lets a staff reviewer upload an approved version without replacing the customer submission", async () => {
     const customer = await seedUser({ role: UserRole.Customer });
     const agent = await seedUser({ role: UserRole.Agent });
-    const document = seedDocument(customer.id);
+    // Official upload is allowed only from submitted_to_government, and the confirm
+    // step sniffs the magic bytes, so the file must be a real PDF.
+    const document = seedDocument(customer.id, DocumentStatus.SubmittedToGovernment);
     seedAssignment(agent.id, customer.id);
 
     const approved = await request(testApp())
       .post(`/api/documents/${document.id}/approved-upload`)
       .set("Authorization", bearer(mintToken(agent)))
-      .attach("file", Buffer.from("approved certificate bytes"), "approved.pdf");
+      .attach("file", Buffer.from("%PDF-1.4\napproved certificate bytes\n%%EOF"), "approved.pdf");
 
     expect(approved.status).toBe(200);
     expect(approved.body.data.approvedFileName).toBe("approved.pdf");
+    // The official file is a separate version; the customer's submission file is untouched.
     expect(approved.body.data.fileName).toBe(document.fileName);
   });
 
@@ -235,7 +238,8 @@ describe("the admin and agent boundary", () => {
     expect(setStatus.status).toBe(403);
 
     // The refusal is real, not a routing accident: the row is untouched.
-    expect(setStatus.body.error).toBe("Forbidden");
+    expect(setStatus.body.error.message).toBe("Forbidden");
+    expect(setStatus.body.error.code).toBe("FORBIDDEN");
   });
 
   it("keeps manager oversight separate from the admin surface", async () => {
@@ -369,6 +373,7 @@ describe("the second half of the takeover chain", () => {
     // No credential, so this is a 401 with a fixed message — the error handler never
     // gets a chance to describe the schema.
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("No token");
+    expect(response.body.error.message).toBe("No token");
+    expect(response.body.error.code).toBe("UNAUTHENTICATED");
   });
 });

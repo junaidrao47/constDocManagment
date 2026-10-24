@@ -7,9 +7,22 @@ import { ServiceEntity } from "../../entities/service.entity";
 import { WorkerRangeEntity } from "../../entities/worker-range.entity";
 import { PackageEntity } from "../packages/package.entity";
 import { calculateQuotation, PricingInput } from "../quotations/pricing.engine";
+import { categoryService, serializePublicCategory } from "../categories/category.service";
+import { Locale, pickLocale } from "../../utils/i18n";
 
 function numberValue(value: string | number | null | undefined): number {
   return value == null ? 0 : Number(value);
+}
+
+/**
+ * Resolve an optional `?category=<slug>` filter to a where-fragment. A slug that
+ * matches no category yields a fragment that cannot match any row, so the list
+ * comes back empty rather than unfiltered.
+ */
+async function categoryFilter(categorySlug?: string): Promise<{ categoryId?: string }> {
+  if (!categorySlug) return {};
+  const id = await categoryService.idForSlug(categorySlug);
+  return { categoryId: id ?? "00000000-0000-0000-0000-000000000000" };
 }
 
 /** Read a single app_settings row; returns the raw jsonb value or null when absent. */
@@ -19,41 +32,49 @@ export async function getSettingValue(key: string): Promise<unknown> {
 }
 
 export const publicService = {
-  async listServices() {
+  async listCategories(locale: Locale) {
+    return categoryService.listPublic(locale);
+  },
+
+  async listServices(locale: Locale, categorySlug?: string) {
     const services = await AppDataSource.getRepository(ServiceEntity).find({
-      where: { isActive: true },
+      where: { isActive: true, ...(await categoryFilter(categorySlug)) },
+      relations: { category: true },
       order: { name: "ASC" },
     });
 
     return services.map((service) => ({
       id: service.id,
-      name: service.name,
-      description: service.description ?? null,
+      name: pickLocale(locale, service.nameEn, service.nameEs),
+      description: pickLocale(locale, service.descriptionEn, service.descriptionEs),
       basePrice: numberValue(service.basePrice),
+      category: service.category ? serializePublicCategory(service.category, locale) : null,
     }));
   },
 
-  async listPackages() {
+  async listPackages(locale: Locale, categorySlug?: string) {
     const packages = await AppDataSource.getRepository(PackageEntity).find({
       // Until `is_active` existed there was nothing to filter on, so drafts and
       // retired packages were served to the public site alongside live ones.
-      where: { isActive: true },
-      relations: { services: true },
+      where: { isActive: true, ...(await categoryFilter(categorySlug)) },
+      relations: { services: true, category: true },
       order: { isFeatured: "DESC", sortOrder: "ASC", name: "ASC" },
     });
 
     return packages.map((pkg) => ({
       id: pkg.id,
-      name: pkg.name,
+      name: pickLocale(locale, pkg.nameEn, pkg.nameEs),
       type: pkg.type,
-      description: pkg.description ?? null,
+      description: pickLocale(locale, pkg.descriptionEn, pkg.descriptionEs),
       isFeatured: pkg.isFeatured,
       price: numberValue(pkg.price),
       durationDays: pkg.durationDays,
+      imageUrl: pkg.imageUrl ?? null,
+      category: pkg.category ? serializePublicCategory(pkg.category, locale) : null,
       services: (pkg.services ?? []).map((service) => ({
         id: service.id,
-        name: service.name,
-        description: service.description ?? null,
+        name: pickLocale(locale, service.nameEn, service.nameEs),
+        description: pickLocale(locale, service.descriptionEn, service.descriptionEs),
         basePrice: numberValue(service.basePrice),
       })),
     }));

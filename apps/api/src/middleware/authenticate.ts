@@ -3,12 +3,14 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import { env } from "../config/env";
 import { isTokenStale, loadSessionState, SessionState } from "../modules/auth/session";
 import { TOKEN_TYPE_ACCESS, TokenClaims } from "../modules/auth/token";
-import { UserRole } from "../modules/users/user.entity";
+import { AccountStatus, UserRole } from "../modules/users/user.entity";
+import { AppError } from "../utils/http-error";
 
 export interface AuthenticatedUser {
   id: string;
   email: string;
   role: UserRole;
+  accountStatus: AccountStatus;
 }
 
 declare global {
@@ -19,9 +21,10 @@ declare global {
   }
 }
 
-/** One shape for every rejection, so nothing here hints at why a token failed. */
-function deny(res: Response, message = "Invalid token"): void {
-  res.status(401).json({ success: false, error: message });
+/** One shape for every rejection, so nothing here hints at why a token failed.
+ * Handed to `next` so the central error handler renders the envelope and requestId. */
+function deny(next: NextFunction, message = "Invalid token"): void {
+  next(new AppError("UNAUTHENTICATED", 401, message));
 }
 
 /**
@@ -39,12 +42,12 @@ function deny(res: Response, message = "Invalid token"): void {
  *
  * Step 3 costs a Redis hit, and a database read only when that cache is cold.
  */
-export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   const [scheme, token] = header?.split(" ") ?? [];
 
   if (!token || scheme?.toLowerCase() !== "bearer") {
-    deny(res, "No token");
+    deny(next, "No token");
     return;
   }
 
@@ -55,12 +58,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     // bad token rather than a missing-secret misconfiguration masquerading as one.
     payload = jwt.verify(token, env.jwtSecret) as JwtPayload & Partial<TokenClaims>;
   } catch {
-    deny(res);
+    deny(next);
     return;
   }
 
   if (payload.typ !== TOKEN_TYPE_ACCESS || !payload.id) {
-    deny(res);
+    deny(next);
     return;
   }
 
@@ -74,12 +77,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   } catch {
     // The account cannot be confirmed, so the request is refused rather than
     // admitted on the strength of a token alone.
-    res.status(503).json({ success: false, error: "Authentication is temporarily unavailable" });
+    next(new AppError("SERVICE_UNAVAILABLE", 503, "Authentication is temporarily unavailable"));
     return;
   }
 
   if (!state || !state.isActive || isTokenStale(payload.iat, state)) {
-    deny(res, "Session is no longer valid");
+    deny(next, "Session is no longer valid");
     return;
   }
 
@@ -87,6 +90,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     id: state.id,
     email: state.email,
     role: state.role,
+    accountStatus: state.accountStatus,
   };
 
   next();

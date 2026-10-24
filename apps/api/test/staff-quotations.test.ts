@@ -2,7 +2,7 @@ import crypto from "crypto";
 import request from "supertest";
 import { QuotationStatus, assertQuotationTransition } from "../src/modules/quotations/quotation-status";
 import { UserRole } from "../src/modules/users/user.entity";
-import { HttpError } from "../src/utils/http-error";
+import { AppError } from "../src/utils/http-error";
 import { bearer, fakeDb, mintToken, resetTestState, seedUser, testApp } from "./support/harness";
 
 beforeEach(() => resetTestState());
@@ -232,7 +232,7 @@ describe("staff create quotations and line items", () => {
         serviceIds: [serviceId],
       });
     expect(notFoundRes.status).toBe(404);
-    expect(notFoundRes.body.error).toMatch(/customer not found/i);
+    expect(notFoundRes.body.error.message).toMatch(/customer not found/i);
 
     // User exists but has role agent instead of customer
     const wrongRoleTargetRes = await request(testApp())
@@ -246,7 +246,7 @@ describe("staff create quotations and line items", () => {
         serviceIds: [serviceId],
       });
     expect(wrongRoleTargetRes.status).toBe(404);
-    expect(wrongRoleTargetRes.body.error).toMatch(/customer not found/i);
+    expect(wrongRoleTargetRes.body.error.message).toMatch(/customer not found/i);
   });
 
   it("rejects a discount larger than the subtotal with 400", async () => {
@@ -268,7 +268,7 @@ describe("staff create quotations and line items", () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/discount cannot exceed subtotal/i);
+    expect(res.body.error.message).toMatch(/discount cannot exceed subtotal/i);
   });
 
   it("accurately computes total math with gov fee and discount using integer cents", async () => {
@@ -350,14 +350,14 @@ describe("staff create quotations and line items", () => {
     it("blocks converted -> anything", () => {
       const allStatuses = Object.values(QuotationStatus);
       for (const target of allStatuses) {
-        expect(() => assertQuotationTransition(QuotationStatus.Converted, target)).toThrow(HttpError);
+        expect(() => assertQuotationTransition(QuotationStatus.Converted, target)).toThrow(AppError);
       }
     });
 
     it("blocks transitions out of cancelled", () => {
       const allStatuses = Object.values(QuotationStatus);
       for (const target of allStatuses) {
-        expect(() => assertQuotationTransition(QuotationStatus.Cancelled, target)).toThrow(HttpError);
+        expect(() => assertQuotationTransition(QuotationStatus.Cancelled, target)).toThrow(AppError);
       }
     });
 

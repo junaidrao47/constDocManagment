@@ -1,4 +1,4 @@
-import { HttpError } from "../../utils/http-error";
+import { AppError } from "../../utils/http-error";
 
 export enum QuotationStatus {
   Draft = "draft",
@@ -23,7 +23,8 @@ const FLOW: Record<QuotationStatus, QuotationStatus[]> = {
 };
 
 export function assertQuotationTransition(from: QuotationStatus, to: QuotationStatus): void {
-  if (!FLOW[from]?.includes(to)) throw new HttpError(409, `Cannot move a quotation from ${from} to ${to}`);
+  if (!FLOW[from]?.includes(to))
+    throw new AppError("INVALID_STATUS_TRANSITION", 409, `Cannot move a quotation from ${from} to ${to}`);
 }
 
 export function isQuotationStatus(value: string): value is QuotationStatus {

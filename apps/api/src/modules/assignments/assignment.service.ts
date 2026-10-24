@@ -1,10 +1,23 @@
 import { AppDataSource } from "../../config/database";
 import { AgentCustomerAssignmentEntity } from "../../entities/agent-customer-assignment.entity";
+import { CustomerManagerAssignmentEntity } from "../../entities/customer-manager-assignment.entity";
+import { CustomerManagerAssignmentLogEntity } from "../../entities/customer-manager-assignment-log.entity";
 import { HttpError } from "../../utils/http-error";
 import { UserEntity, UserRole } from "../users/user.entity";
 
 const assignments = () => AppDataSource.getRepository(AgentCustomerAssignmentEntity);
+const managerAssignments = () => AppDataSource.getRepository(CustomerManagerAssignmentEntity);
+const managerAssignmentLog = () => AppDataSource.getRepository(CustomerManagerAssignmentLogEntity);
 const users = () => AppDataSource.getRepository(UserEntity);
+
+export interface SetManagerInput {
+  customerId: string;
+  managerId: string;
+  /** The admin performing the change; recorded, never taken from the request body. */
+  actorId?: string | null;
+  note?: string | null;
+  reason?: string | null;
+}
 
 export interface AssignInput {
   agentId: string;
@@ -167,6 +180,83 @@ export const assignmentService = {
 
     const count = await assignments().count({ where: { agentId, customerId } });
     return count > 0;
+  },
+
+  // ── Manager assignment (PROJECT-BRIEF §11.2) ───────────────────────────────────
+  //
+  // One manager per customer at a time (unique index on customer_id). Every change
+  // writes a log row so reassignment history survives. These live here so "assign a
+  // staff member to a customer" stays one module, even though the data model differs
+  // from the many-to-many agent table above.
+
+  /**
+   * Sets (or replaces) the customer's manager and records the change in the log.
+   * Idempotent for the same manager: it refreshes the note/reason without a
+   * duplicate log row unless the manager actually changed.
+   */
+  async setManager(input: SetManagerInput): Promise<CustomerManagerAssignmentEntity> {
+    assertDatabaseReady();
+
+    await requireUserWithRole(input.customerId, UserRole.Customer, "Customer");
+    await requireUserWithRole(input.managerId, UserRole.Manager, "Manager");
+
+    const existing = await managerAssignments().findOne({ where: { customerId: input.customerId } });
+    const previousManagerId = existing?.managerId ?? null;
+    const managerChanged = previousManagerId !== input.managerId;
+
+    const saved = await AppDataSource.transaction(async (manager) => {
+      const row = existing ?? managerAssignments().create({ customerId: input.customerId });
+      row.managerId = input.managerId;
+      row.assignedBy = input.actorId ?? row.assignedBy ?? null;
+      row.note = input.note ?? row.note ?? null;
+      const persisted = await manager.save(CustomerManagerAssignmentEntity, row);
+
+      if (managerChanged) {
+        await manager.save(CustomerManagerAssignmentLogEntity, {
+          customerId: input.customerId,
+          fromManagerId: previousManagerId,
+          toManagerId: input.managerId,
+          changedBy: input.actorId ?? null,
+          reason: input.reason ?? input.note ?? null,
+        });
+      }
+
+      return persisted;
+    });
+
+    return saved;
+  },
+
+  /** Reassigns a customer to a different manager; `reason` is required at the route. */
+  async reassignManager(input: SetManagerInput): Promise<CustomerManagerAssignmentEntity> {
+    return this.setManager(input);
+  },
+
+  /** The manager id responsible for a customer, or null when none is assigned. */
+  async getManagerFor(customerId: string): Promise<string | null> {
+    assertDatabaseReady();
+    const row = await managerAssignments().findOne({ where: { customerId } });
+    return row?.managerId ?? null;
+  },
+
+  /** Whether `managerId` is the customer's assigned manager. */
+  async isManagerFor(managerId: string, customerId: string): Promise<boolean> {
+    assertDatabaseReady();
+    const count = await managerAssignments().count({ where: { managerId, customerId } });
+    return count > 0;
+  },
+
+  /** The customer ids a manager is responsible for. */
+  async listCustomersForManager(managerId: string): Promise<string[]> {
+    assertDatabaseReady();
+    const rows = await managerAssignments().find({ where: { managerId }, order: { createdAt: "ASC" } });
+    return rows.map((row) => row.customerId);
+  },
+
+  /** The reassignment history for a customer, newest first. */
+  async managerHistory(customerId: string): Promise<CustomerManagerAssignmentLogEntity[]> {
+    assertDatabaseReady();
+    return managerAssignmentLog().find({ where: { customerId }, order: { createdAt: "DESC" } });
   },
 
   /**

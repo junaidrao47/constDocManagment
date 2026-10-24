@@ -154,3 +154,28 @@ Which payment gateway (Stripe / Mercado Pago / other) or offline for now? Real l
 6. **Resubmission**: after a rejection the customer uploads a new VERSION. History is never overwritten.
 7. **Email automation control panel (rules, sender choice, auto/manual mode, time control, sent-email log screens) is DEFERRED** until after the first delivery. Do NOT build it now. Keep sending emails through the existing queue/`notify()` so it can be added later.
 8. **Quality bar**: consistent error handling everywhere (see Prompt A). Every list/detail screen has loading, empty and error states.
+## 11. Decisions 2026-10-24 (override anything above that conflicts)
+
+1. **Account approval**: a newly registered customer cannot use the portal until an admin approves the account
+   (`account_status`: pending_approval | approved | suspended). Pending users see a "waiting for approval" screen only.
+2. **Persona**: the customer chooses a persona at onboarding (e.g. individual / company; the list lives in one constant and is
+   admin-editable later). On approval the admin assigns a manager (the persona is shown to help the choice).
+   One customer has one assigned manager at a time; reassignment is logged.
+3. **Staff accounts**: only an admin creates manager/agent credentials (no public staff registration).
+4. **Onboarding**: after the first login the customer completes onboarding pages: persona, legal/business name, contact person,
+   notification email(s), phone, state and city, and which services/packages they need. The notification email entered here is the
+   address for phase emails. Onboarding data is editable later from the profile.
+5. **Document phases**: each document has an ordered list of approval phases defined by the manager
+   (name EN/ES, department/authority, target date, status: not_started | in_progress | completed | rejected, completed_at, note).
+   A phase is completed when the manager uploads that phase's resulting file (version kind 'phase_result') or marks it complete with a note.
+   Progress = completed phases / total phases. The manager can also set a target approval date for the whole document.
+6. **Visibility**: customers see the phase list, progress bar, target dates and notes on their document page and on the dashboard.
+7. **Phase emails**: when a phase is completed or rejected, an email goes to the customer's onboarding notification email(s)
+   in their language. Uses the existing notify() queue. The admin email-automation control panel stays DEFERRED.
+8. **Manager workspace**: each manager has a "My customers" list, and each customer has its own profile page
+   (/customers/[id]) with onboarding details, services/packages bought, documents with phase progress bars, downloads, and a timeline.
+9. **Admin analytics**: dashboard with platform-wide KPIs and charts (customers by status, registrations over time, documents by status,
+   average phase duration, documents waiting per manager, quotations funnel, revenue in MXN, emails sent/failed).
+10. **Protection**: all three portals are protected (see section 12 of the checklist below). Admin lives on its own hostname.
+11. **Scope note**: items 1, 4, 5, 6, 7, 9 add to the signed scope; they must be sent to the client as a written change request
+    before delivery.

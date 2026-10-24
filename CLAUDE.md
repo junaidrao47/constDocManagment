@@ -33,3 +33,12 @@
 - Money: MXN, formatted with Intl.NumberFormat; never hardcode a currency symbol.
 - Mobile-first. Check at 375px and 1280px.
 - A task ends only when: npm run lint && npx tsc --noEmit && npm run build pass.
+## Token rules (always follow)
+- Use the Graphify graph and Ponytail before opening files; never read whole directories.
+- Read docs/PROJECT-BRIEF.md only for the sections the task names.
+- Do not read docs/build-audit-*.md in full; open only the rows for the current task.
+- Run targeted tests (`vitest run <file>`), not the full suite. Run the full gate (tsc, lint, test, build) once at the end of a task, with output piped through `| tail -30`.
+- Run `npm run smoke` only when the backend changed, once per task.
+- Do not take screenshots unless I ask. Do not write Playwright specs unless I ask.
+- No subagents for small tasks. No repeated audits.
+- Keep answers short: report what changed, what passed, what is left.

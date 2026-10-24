@@ -440,6 +440,59 @@ built against unpaginated responses is a rewrite of every table component.
 id and omit it from lists. Returning an empty result for a direct fetch makes assignment bugs
 indistinguishable from missing data during Phase 4 debugging.
 
+## Account lifecycle, onboarding, document phases, analytics (2026-10-24) — DONE
+
+Account-approval gate: authenticated **customer** routes return 403 `ACCOUNT_PENDING` /
+`ACCOUNT_SUSPENDED` unless the account is `approved`. Exceptions: `/auth/*`, `GET /customers/me`,
+and `GET|PUT /customers/me/onboarding`. Staff are never gated. Enforced by
+`middleware/account-status.ts` on `/api/customers`, `/api/documents`, `/api/quotations`.
+
+Customer (self):
+- `GET /api/customers/me/onboarding` — profile + persona list + `completed` flag. **DONE**
+- `PUT /api/customers/me/onboarding` — upsert persona, legal/contact name, up to 3 validated
+  `notificationEmails` (the phase-email recipients), phone, state, city, needs, and `locale`
+  (sets `users.preferred_locale`). **DONE**
+- `GET /api/customers/me/dashboard` — now also returns `manager {id,name,email}|null` (the assigned
+  manager). **DONE**
+- `GET /api/customers/me/documents` — each document now also carries `service {id,nameEn,nameEs}|null`,
+  `progress {completed,total,percent}`, `phaseStatuses[]` (ordered), `targetDate`, `nextTargetDate`. **DONE**
+- Document versions: the owning customer may now also see and download `phase_result` files (not just the
+  official file); `staff_on_behalf` stays hidden. `GET /documents/:id/versions` +
+  `/versions/:versionId/{download,preview}-url`. **DONE**
+
+Admin (`/api/admin`, admin only):
+- `GET /customers?status=pending_approval&search=&page=&pageSize=` — customers with their
+  assigned `managerId`, plus `persona` + `city` from the onboarding profile (null until onboarded).
+  **DONE**
+- `GET /managers` — managers with their current assigned-customer count
+  (`{ id, name, email, customerCount }[]`), for the approve/reassign pickers. Read-only. **DONE**
+- `POST /customers/:id/approve` body `{ managerId }` — approve + assign manager (400
+  `MANAGER_REQUIRED` if absent); emails the customer. **DONE**
+- `POST /customers/:id/suspend` / `POST /customers/:id/reactivate` — flips `account_status`;
+  suspend ends live sessions. **DONE**
+- `POST /customers/:id/manager` body `{ managerId, reason }` — reassign; writes the log. **DONE**
+- `GET /analytics/overview?from=&to=` — KPIs/time-series (§11.9), SQL aggregates, Redis-cached 60s.
+  The bare `GET /analytics` stays a **STUB**. **DONE**
+
+Manager workspace (`/api/manager`, manager + admin):
+- `GET /manager/customers` — the caller's assigned customers with pending-doc counts + progress. **DONE**
+- `GET /manager/customers/:id` — profile + onboarding + subscriptions + documents (with progress)
+  + merged timeline; a manager only for their own customers. **DONE**
+
+Document phases (`/api/documents`, phase writes are manager-of-the-customer or admin):
+- `GET /documents/phases/statuses` — the phase status contract (any authenticated role). **DONE**
+- `GET /documents/:id` — now also returns `phases[]`, `progress {completed,total,percent}`,
+  `targetDate` (owning customer or staff). **DONE**
+- `POST /documents/:id/phases` body `{ phases?[], order? }` — create (append) and/or reorder. **DONE**
+- `PATCH /documents/:id/phases/:phaseId` — edit fields and/or move status (rejection needs a note);
+  writes history and emails the customer's onboarding addresses on completed/rejected. **DONE**
+- `POST /documents/:id/phases/:phaseId/result-upload-intent` → bytes via the existing
+  `POST /documents/:id/versions/:versionId/upload` → `POST /documents/:id/phases/:phaseId/result/:versionId/confirm`
+  — uploads the phase result (version kind `phase_result`) and completes the phase. **DONE**
+
+Phase/approval emails go through the existing `email` queue, localized (`en` / `es-MX`) via the
+worker's `<template>.<locale>.hbs` resolution and a shared `_layout.hbs` partial.
+
 
 
 

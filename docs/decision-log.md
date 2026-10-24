@@ -769,3 +769,89 @@ reference it; the public site filters by category and shows it on each card.
   government → staff official upload → customer downloads the official file (HTTP 200, bytes match)
   → checklist 100%; plus negatives (wrong type, 26 MB, replace-while-locked, unassigned agent,
   customer-A-vs-B IDOR). New pure-logic unit tests in `test/document-pipeline.test.ts`.
+
+## 2026-10-24 — Account approval, manager assignment, onboarding, document phases, analytics
+
+### Decision
+- **Account approval** (§11.1): `users.account_status` (`pending_approval | approved | suspended`,
+  DB default `approved`) with `preferred_locale` (`en | es-MX`, default `es-MX`). Self-registration
+  sets `pending_approval`; everything else (staff, backfilled rows) is `approved`. A gate
+  (`middleware/account-status.ts`) blocks pending/suspended **customers** from the portal, exempting
+  `GET /customers/me` and the onboarding routes; it reads the status off the cached session (no extra
+  query) so `account_status` was added to `SessionState`.
+- **Manager assignment** (§11.2): a dedicated `customer_manager_assignments` (UNIQUE `customer_id`
+  = one manager at a time) + append-only `customer_manager_assignment_log`, managed by new methods on
+  the existing `assignment.service.ts`. The agent `agent_customer_assignments` table (many-to-many,
+  agent-role) was **left untouched** rather than generalised — different cardinality and role, and a
+  rename would have rewritten every agent-scoping call site.
+- **Phase status stored as `varchar(20)`**, not a Postgres enum: §10.3 says statuses will change after
+  the first delivery, and a varchar avoids an enum ALTER each time. Transitions live in one module
+  (`phase-status.ts`), exposed via `GET /documents/phases/statuses`.
+- **`phase_result` version kind** is staff-internal (not customer-downloadable); completing a phase by
+  uploading its result does NOT change the document's own status (unlike `official`).
+- **Analytics** served at `/admin/analytics/overview` with raw SQL aggregates (no N+1), a date-range
+  param, and a 60s Redis cache. The legacy bare `/admin/analytics` stub was kept.
+
+### Why
+- One manager per customer with a logged history is a poor fit for the many-to-many agent table;
+  narrowing a unique constraint onto live agent rows is riskier than a new table (and this repo's
+  top risk is schema drift). A separate table keeps both models honest.
+- Phase emails must reach the **onboarding** `notification_emails` (not the login address) in the
+  customer's locale, which the injected `notify()` cannot express (single login recipient, no locale).
+  Added `notifyPhase` / `notifyAccountApproved` that resolve recipients + locale and enqueue per address.
+
+### Result
+- Entities: `account_status`/`preferred_locale` on `users`; new `customer_profiles`,
+  `customer_manager_assignments`, `customer_manager_assignment_log`, `document_phases`,
+  `document_phase_history`; `documents.target_date`; `document_versions.kind` gains `phase_result`.
+- Migrations (literal per-table DDL, nullable→backfill→NOT NULL): `1890000000000-AccountStatus`,
+  `1900000000000-CustomerProfiles`, `1910000000000-ManagerAssignments`, `1920000000000-DocumentPhases`.
+- API: onboarding (`/customers/me/onboarding`), admin customer lifecycle + reassignment
+  (`/admin/customers/*`), analytics (`/admin/analytics/overview`), manager workspace
+  (`/manager/customers*`), and phase management under `/documents/:id/phases*`.
+- Emails: worker resolves `<template>.<locale>.hbs` with a shared `_layout.hbs` partial; new
+  `phase-completed`, `phase-rejected`, `account-approved` templates in EN + es-MX.
+- Error codes `ACCOUNT_PENDING`, `ACCOUNT_SUSPENDED`, `MANAGER_REQUIRED`, `PHASE_INVALID_TRANSITION`
+  added with live throw sites; `ONBOARDING_INCOMPLETE` reserved (`docs/error-codes.md`).
+- `npm run smoke` extended (stories 9–12): register → blocked (`ACCOUNT_PENDING`) → approve-without-
+  manager refused (`MANAGER_REQUIRED`) → approve with manager → onboarding saved → 3 phases → phase-1
+  result upload (progress 33%) → customer sees phases → illegal transition refused → manager workspace
+  → analytics overview. New unit tests in `test/document-phases.test.ts`.
+
+## 2026-10-24 — Admin list persona/city + managers-with-counts (read-only, for the admin UI)
+
+### Context
+Building the admin/manager portal (admin-frontend). The Customers table needs a persona badge and
+city per row, and the approve/reassign manager picker needs each manager's current customer count.
+The signed task said "no backend change"; the user explicitly approved a **small read-only** addition
+for these two gaps (no writes, no schema change).
+
+### Decision
+- `GET /api/admin/customers` serializer now also returns `persona` + `city`, read from the existing
+  `customer_profiles` for the page's rows in one batched `In(...)` query (no N+1). Null until onboarded.
+- New `GET /api/admin/managers` → `{ id, name, email, customerCount }[]` from one grouped aggregate
+  (`users LEFT JOIN customer_manager_assignments`), admin-only, active managers only.
+
+### Not done (flagged)
+- No endpoint sets the document-wide `documents.target_date`; the admin/manager UI renders it read-only.
+  Adding a setter is a write and was left out of this read-only scope.
+
+## 2026-10-24 — Customer read additions for the portal (phases dashboard + result downloads)
+
+### Context
+Building the customer portal (customer-portal). The dashboard needs the customer's assigned manager and
+per-document phase progress/target-date/service for the "documents grouped by service" view, and the
+document page needs to show/download per-phase result files. These are reads the customer endpoints did
+not expose; the user approved a small read-only addition (no writes, no schema change).
+
+### Decision
+- `GET /api/customers/me/dashboard` returns `manager {id,name,email}|null` (via `assignmentService.getManagerFor`).
+- `GET /api/customers/me/documents` enriches each document with `service {id,nameEn,nameEs}`, `progress`,
+  `phaseStatuses[]`, `targetDate`, `nextTargetDate` — built from two batched `In(...)` queries (no N+1).
+- The owning customer may now download `phase_result` versions (previously staff-internal) in addition to the
+  official approved file; `staff_on_behalf` uploads remain hidden. Enforced in `document.service`
+  (`listVersions`, `getVersionDownloadTarget`, `getVersionForDownload`) via one `customerMayDownload` helper.
+
+### Not changed
+- API auth stays Bearer/sessionStorage; the portal adds only a non-HttpOnly presence-flag cookie for the
+  Next middleware route guard (no token in the cookie, no switch to cookie auth).

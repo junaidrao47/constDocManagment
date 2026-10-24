@@ -26,6 +26,10 @@ The code is produced in one of two ways:
 | `UPLOAD_INCOMPLETE` | 400 | A version was confirmed before its bytes arrived, the stored object is empty, or a local byte sink received nothing (`document.service.ts` `confirmVersion`/`uploadVersionBytes`). |
 | `UNAUTHENTICATED` | 401 | No bearer token, an invalid/expired token, a non-access token type, or a session no longer valid (disabled/demoted/stale). Also thrown JWT errors. |
 | `FORBIDDEN` | 403 | Authenticated but the role is not allowed on the route. |
+| `ACCOUNT_PENDING` | 403 | A customer whose account is still `pending_approval` tried to use a gated route (`middleware/account-status.ts`). `/customers/me` (read) and `/customers/me/onboarding` stay reachable. |
+| `ACCOUNT_SUSPENDED` | 403 | A customer whose account is `suspended` tried to use a gated route. Same gate and exceptions as `ACCOUNT_PENDING`. |
+| `MANAGER_REQUIRED` | 400 | An admin approved a customer without supplying a `managerId` — approval must assign a manager (`admin-customer.service.ts`). |
+| `PHASE_INVALID_TRANSITION` | 409 | A document phase was moved to a status not reachable from its current one (`documents/phase-status.ts`). |
 | `NOT_ENTITLED` | 403 | The customer is not entitled to upload for this service (`canUploadDocuments`), or the customer requested an official file that is not available yet. Returns `true` for now (PROJECT-BRIEF §10.4), so the download guard is its live throw site. |
 | `NOT_FOUND` | 404 | No such resource, or no `/api` route matched the request. |
 | `CONFLICT` | 409 | A uniqueness/state conflict, including a Postgres `23505` unique violation (reported without the constraint name). Also a duplicate category slug. |
@@ -45,4 +49,10 @@ The code is produced in one of two ways:
 
 All document-pipeline codes (`DOCUMENT_LOCKED`, `NOT_ENTITLED`, `UPLOAD_EXPIRED`,
 `UPLOAD_INCOMPLETE`) now have live throw sites and have moved into the table above
-(version pipeline, decision-log 2026-10-23). Nothing is currently reserved here.
+(version pipeline, decision-log 2026-10-23).
+
+- `ONBOARDING_INCOMPLETE` (400) — reserved. Intended for a future rule that gates a
+  specific customer action behind a completed onboarding profile (PROJECT-BRIEF §11.4).
+  Not thrown yet: account access is gated by approval status (`ACCOUNT_PENDING`), not by
+  onboarding completeness, and no current action requires a complete profile. The
+  completeness flag is already computed and returned by `GET /customers/me/onboarding`.

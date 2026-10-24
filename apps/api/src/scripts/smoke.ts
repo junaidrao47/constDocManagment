@@ -22,6 +22,7 @@ const HEALTH = `${new URL(API).origin}/health/ready`;
 
 const ADMIN = { email: "admin@test.com", password: "AdminPassword123!" };
 const AGENT = { email: "agent@test.com", password: "AgentPassword123!" };
+const MANAGER = { email: "manager@test.com", password: "ManagerPassword123!" };
 const CUSTOMER = { email: "customer@test.com", password: "CustomerPassword123!" };
 // Seeded second customer/agent, used only for the IDOR and not-assigned negatives.
 const CUSTOMER2 = { email: "customer2@test.com", password: "CustomerPassword123!" };
@@ -564,10 +565,12 @@ async function main(): Promise<void> {
   if (!officialVersion) {
     fail("story 7 - customer downloads the official file", "no official version visible to the customer");
   } else {
-    const dl = data<{ downloadUrl: string }>(
+    const dl = data<{ downloadUrl: string; downloadMode: string }>(
       await need("official download url", call("GET", `/documents/${documentId}/versions/${officialVersion.id}/download-url`, { token: customerToken })),
     );
-    const fetched = await fetch(dl.downloadUrl);
+    // In S3 mode the presigned URL carries its own auth; in local mode the download
+    // route is a normal authenticated API endpoint, so the token must be sent.
+    const fetched = await fetch(dl.downloadUrl, dl.downloadMode === "local" ? { headers: { Authorization: `Bearer ${customerToken}` } } : {});
     const bytes = Buffer.from(await fetched.arrayBuffer());
     if (fetched.status === 200 && bytes.equals(officialPdf)) {
       pass("story 7 - customer downloads the official file (bytes match)", `${bytes.length} bytes`);
@@ -638,6 +641,171 @@ async function main(): Promise<void> {
     ),
   );
   pass("story 8 - customer sees their invoices", `${invoices.length} invoice(s)`);
+
+  // -- story 9: account approval + manager assignment -----------------------
+  // A brand-new self-registration starts pending and is locked out of the portal
+  // until an admin approves it and assigns a manager (PROJECT-BRIEF §11.1/§11.2).
+  const pendingEmail = `smoke-pending-${Date.now()}@test.com`;
+  const registration = await need(
+    "register a new customer",
+    call("POST", "/auth/register", { body: { email: pendingEmail, password: "CustomerPassword123!", name: "Pending Co" } }),
+  );
+  const pendingCustomer = data<{ user: { id: string; accountStatus: string }; accessToken: string }>(registration);
+  const pendingId = pendingCustomer.user.id;
+  let pendingToken = pendingCustomer.accessToken;
+  if (pendingCustomer.user.accountStatus === "pending_approval") {
+    pass("story 9 - a new registration is pending_approval");
+  } else {
+    fail("story 9 - a new registration is pending", `accountStatus is ${pendingCustomer.user.accountStatus}`);
+  }
+
+  // Pending: the portal is gated, but reading own record is allowed.
+  const blocked = await call("GET", "/customers/me/dashboard", { token: pendingToken });
+  expectError("story 9 neg - a pending customer is blocked from the portal", blocked, 403, "ACCOUNT_PENDING");
+  const ownRecord = await call("GET", "/customers/me", { token: pendingToken });
+  if (ownRecord.status === 200) pass("story 9 - a pending customer can still read /me");
+  else fail("story 9 - a pending customer can read /me", `HTTP ${ownRecord.status}`);
+
+  // Approve requires a manager: the manager-less call is a precise MANAGER_REQUIRED.
+  const noManager = await call("POST", `/admin/customers/${pendingId}/approve`, { token: adminToken, body: {} });
+  expectError("story 9 neg - approving without a manager is refused", noManager, 400, "MANAGER_REQUIRED");
+
+  const managerId = data<{ items: Array<{ id: string }> }>(
+    await need("manager lookup", call("GET", `/admin/users?role=manager&search=${encodeURIComponent(MANAGER.email)}&pageSize=1`, { token: adminToken })),
+  ).items[0].id;
+  await need(
+    "approve the customer with a manager",
+    call("POST", `/admin/customers/${pendingId}/approve`, { token: adminToken, body: { managerId } }),
+  );
+  pass("story 9 - admin approves the customer and assigns a manager");
+
+  // The session cache was invalidated on approval, so the same token now works.
+  pendingToken = await login({ email: pendingEmail, password: "CustomerPassword123!" });
+  const afterApproval = await call("GET", "/customers/me/dashboard", { token: pendingToken });
+  if (afterApproval.status === 200) pass("story 9 - the approved customer reaches the portal");
+  else fail("story 9 - the approved customer reaches the portal", `HTTP ${afterApproval.status}`);
+
+  // -- story 10: onboarding -------------------------------------------------
+  const onboardingEmail = `ops-${Date.now()}@acme.test`;
+  const onboarding = data<{ onboarding: { completed: boolean; notificationEmails: string[] } }>(
+    await need(
+      "save onboarding",
+      call("PUT", "/customers/me/onboarding", {
+        token: pendingToken,
+        body: {
+          persona: "company",
+          legalName: "Acme S.A. de C.V.",
+          contactName: "Juana Pérez",
+          notificationEmails: [onboardingEmail],
+          phone: "+52 55 1234 5678",
+          state: "CDMX",
+          city: "Ciudad de México",
+          needs: ["permits"],
+          locale: "es-MX",
+        },
+      }),
+    ),
+  );
+  if (onboarding.onboarding.completed && onboarding.onboarding.notificationEmails.includes(onboardingEmail)) {
+    pass("story 10 - onboarding saved and marked complete", onboardingEmail);
+  } else {
+    fail("story 10 - onboarding saved", `completed=${onboarding.onboarding.completed}`);
+  }
+
+  // -- story 11: document phases + progress + phase emails ------------------
+  const managerToken = await login(MANAGER);
+
+  // The approved customer uploads a document so the manager has something to phase.
+  const phaseDoc = data<{ document: { id: string }; versionId: string; uploadMode: string; upload: UploadTarget["upload"] }>(
+    await need(
+      "phase document upload target",
+      call("POST", "/documents/upload-url", { token: pendingToken, body: { fileName: "phase-doc.pdf", contentType: "application/pdf" } }),
+    ),
+  );
+  const phaseDocId = phaseDoc.document.id;
+  const phasePut = await putBytes(phaseDocId, phaseDoc.versionId, phaseDoc, makePdf("phase-doc"), "phase-doc.pdf", "application/pdf", pendingToken);
+  if (phasePut >= 300) throw new Error(`phase document byte upload returned HTTP ${phasePut}`);
+  await need("confirm phase document", call("POST", `/documents/${phaseDocId}/versions/${phaseDoc.versionId}/confirm`, { token: pendingToken }));
+
+  const created3 = data<{ phases: Array<{ id: string }>; progress: { total: number; percent: number } }>(
+    await need(
+      "manager creates 3 phases",
+      call("POST", `/documents/${phaseDocId}/phases`, {
+        token: managerToken,
+        body: {
+          phases: [
+            { nameEn: "Submission", nameEs: "Presentación", department: "SAT" },
+            { nameEn: "Municipal review", nameEs: "Revisión municipal", department: "Municipio" },
+            { nameEn: "Final approval", nameEs: "Aprobación final", department: "Gobierno" },
+          ],
+        },
+      }),
+    ),
+  );
+  if (created3.phases.length === 3 && created3.progress.total === 3 && created3.progress.percent === 0) {
+    pass("story 11 - manager adds 3 phases", `progress ${created3.progress.percent}%`);
+  } else {
+    fail("story 11 - manager adds 3 phases", `${created3.phases.length} phases, ${created3.progress.percent}%`);
+  }
+
+  // Upload the result file for phase 1 → it completes and progress reaches 33%.
+  const firstPhaseId = created3.phases[0].id;
+  const resultIntent = data<{ versionId: string; uploadMode: string; upload: UploadTarget["upload"] }>(
+    await need(
+      "phase result upload intent",
+      call("POST", `/documents/${phaseDocId}/phases/${firstPhaseId}/result-upload-intent`, { token: managerToken, body: { fileName: "phase1-result.pdf", contentType: "application/pdf" } }),
+    ),
+  );
+  const resultPut = await putBytes(phaseDocId, resultIntent.versionId, resultIntent, makePdf("phase1-result"), "phase1-result.pdf", "application/pdf", managerToken);
+  if (resultPut >= 300) throw new Error(`phase result byte upload returned HTTP ${resultPut}`);
+  const confirmedPhase = data<{ phase: { status: string }; progress: { percent: number } }>(
+    await need(
+      "confirm phase 1 result",
+      call("POST", `/documents/${phaseDocId}/phases/${firstPhaseId}/result/${resultIntent.versionId}/confirm`, { token: managerToken }),
+    ),
+  );
+  if (confirmedPhase.phase.status === "completed" && confirmedPhase.progress.percent === 33) {
+    pass("story 11 - phase 1 result upload completes it (progress 33%)");
+  } else {
+    fail("story 11 - phase 1 completes at 33%", `status ${confirmedPhase.phase.status}, ${confirmedPhase.progress.percent}%`);
+  }
+
+  // The customer sees the phases and progress on their own document.
+  const customerView = data<{ phases: Array<{ status: string }>; progress: { percent: number } }>(
+    await need("customer reads phased document", call("GET", `/documents/${phaseDocId}`, { token: pendingToken })),
+  );
+  if (customerView.phases.length === 3 && customerView.progress.percent === 33) {
+    pass("story 11 - customer sees the phase list and progress");
+  } else {
+    fail("story 11 - customer sees phases", `${customerView.phases.length} phases, ${customerView.progress.percent}%`);
+  }
+
+  // Negative: an illegal phase transition (completed → rejected) is refused.
+  const badTransition = await call("PATCH", `/documents/${phaseDocId}/phases/${firstPhaseId}`, {
+    token: managerToken,
+    body: { status: "rejected", note: "trying to reject an already-completed phase" },
+  });
+  expectError("story 11 neg - illegal phase transition is refused", badTransition, 409, "PHASE_INVALID_TRANSITION");
+
+  // The manager workspace lists the customer with progress.
+  const myCustomers = data<Array<{ id: string; progress: { percent: number } }>>(
+    await need("manager workspace", call("GET", "/manager/customers", { token: managerToken })),
+  );
+  if (myCustomers.some((c) => c.id === pendingId)) {
+    pass("story 11 - the customer appears in the manager's workspace");
+  } else {
+    fail("story 11 - manager workspace lists the customer", "customer missing");
+  }
+
+  // -- story 12: admin analytics overview -----------------------------------
+  const analytics = data<{ customersByStatus: unknown[]; revenue: { currency: string } }>(
+    await need("admin analytics overview", call("GET", "/admin/analytics/overview", { token: adminToken })),
+  );
+  if (Array.isArray(analytics.customersByStatus) && analytics.revenue.currency === "MXN") {
+    pass("story 12 - admin analytics overview", `${analytics.customersByStatus.length} status buckets`);
+  } else {
+    fail("story 12 - admin analytics overview", "unexpected shape");
+  }
 
   // -- cleanup: leave the catalogue as we found it ---------------------------
   await call("DELETE", `/admin/packages/${packageId}`, { token: adminToken });

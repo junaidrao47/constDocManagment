@@ -16,6 +16,7 @@ import { agentRouter } from "./modules/agent/agent.router";
 import { managerRouter } from "./modules/manager/manager.router";
 import { authenticate } from "./middleware/authenticate";
 import { authorize } from "./middleware/authorize";
+import { enforceAccountStatus } from "./middleware/account-status";
 import { errorHandler } from "./middleware/errorHandler";
 import { requestId } from "./middleware/request-id";
 import { AppError } from "./utils/http-error";
@@ -148,11 +149,13 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/users", authenticate, userRouter);
   app.use("/api/customers", authenticate, authorize(UserRole.Customer), customerRouter);
-  app.use("/api/documents", authenticate, documentRouter);
+  // A pending/suspended customer is blocked from documents and quotations; staff
+  // pass through the gate untouched (it acts only on the customer role).
+  app.use("/api/documents", authenticate, enforceAccountStatus(), documentRouter);
   app.use("/api/agent", authenticate, agentRouter);
   app.use("/api/public", publicRouter);
   app.use("/api/public/catalog", publicCatalogRouter);
-  app.use("/api/quotations", authenticate, quotationRouter);
+  app.use("/api/quotations", authenticate, enforceAccountStatus(), quotationRouter);
   // Admin only. `manager` used to be listed here and so inherited the entire admin
   // surface — user management, pricing configuration, analytics. Manager-specific
   // oversight lives under /api/manager, which Phase 4 adds along with assignments.

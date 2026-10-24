@@ -15,6 +15,23 @@ export enum UserRole {
 	Admin = "admin",
 }
 
+/**
+ * Where a customer account sits in the approval lifecycle (PROJECT-BRIEF §11.1).
+ * Staff and every pre-existing account are `approved`; a self-registered customer
+ * starts `pending_approval` and cannot use the portal until an admin approves it.
+ */
+export enum AccountStatus {
+	PendingApproval = "pending_approval",
+	Approved = "approved",
+	Suspended = "suspended",
+}
+
+/** The user's chosen language; drives emails and PDFs. Default es-MX (client is Mexican). */
+export enum UserLocale {
+	En = "en",
+	EsMX = "es-MX",
+}
+
 @Entity({ name: "users" })
 export class UserEntity extends AppBaseEntity {
 	@Column({ type: "varchar", length: 150, nullable: true })
@@ -39,6 +56,27 @@ export class UserEntity extends AppBaseEntity {
 
 	@Column({ name: "is_active", type: "boolean", default: true })
 	isActive!: boolean;
+
+	/**
+	 * Approval lifecycle. DB default is `approved` so staff/admin inserts and any
+	 * backfilled row are usable; the register service overrides it to
+	 * `pending_approval` for self-registered customers.
+	 */
+	@Column({
+		name: "account_status",
+		type: "enum",
+		enum: AccountStatus, enumName: "account_status_enum",
+		default: AccountStatus.Approved,
+	})
+	accountStatus!: AccountStatus;
+
+	@Column({
+		name: "preferred_locale",
+		type: "enum",
+		enum: UserLocale, enumName: "user_locale_enum",
+		default: UserLocale.EsMX,
+	})
+	preferredLocale!: UserLocale;
 
 	/**
 	 * Tokens issued before this moment are refused. Set on password reset and on

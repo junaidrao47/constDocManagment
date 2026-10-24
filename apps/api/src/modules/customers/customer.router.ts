@@ -9,8 +9,22 @@ import { InvoiceIdParamSchema } from "../payments/invoice.schema";
 import { documentService } from "../documents/document.service";
 import { localeFromRequest } from "../../utils/i18n";
 import { validate, validateParams, validateQuery } from "../../middleware/validate";
+import { enforceAccountStatus } from "../../middleware/account-status";
+import { OnboardingSchema } from "./customer.schema";
 
 export const customerRouter = Router();
+
+// A pending/suspended customer may still read their own record and complete
+// onboarding (PROJECT-BRIEF §11.1); everything else under /customers is gated.
+customerRouter.use(
+  enforceAccountStatus({
+    allow: [
+      { method: "GET", path: "/me" },
+      { method: "GET", path: "/me/onboarding" },
+      { method: "PUT", path: "/me/onboarding" },
+    ],
+  }),
+);
 
 function sendAsync<T>(handler: (req: Request) => Promise<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -37,6 +51,29 @@ customerRouter.get(
     }
 
     return customerService.getCustomerProfile(req.user.id);
+  }),
+);
+
+customerRouter.get(
+  "/me/onboarding",
+  sendAsync((req) => {
+    if (!req.user) {
+      throw new HttpError(401, "Authenticated user is required");
+    }
+
+    return customerService.getOnboarding(req.user.id);
+  }),
+);
+
+customerRouter.put(
+  "/me/onboarding",
+  validate(OnboardingSchema),
+  sendAsync((req) => {
+    if (!req.user) {
+      throw new HttpError(401, "Authenticated user is required");
+    }
+
+    return customerService.putOnboarding(req.user.id, req.body);
   }),
 );
 

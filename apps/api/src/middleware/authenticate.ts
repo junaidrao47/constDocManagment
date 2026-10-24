@@ -3,13 +3,14 @@ import jwt, { JwtPayload } from "jsonwebtoken";
 import { env } from "../config/env";
 import { isTokenStale, loadSessionState, SessionState } from "../modules/auth/session";
 import { TOKEN_TYPE_ACCESS, TokenClaims } from "../modules/auth/token";
-import { UserRole } from "../modules/users/user.entity";
+import { AccountStatus, UserRole } from "../modules/users/user.entity";
 import { AppError } from "../utils/http-error";
 
 export interface AuthenticatedUser {
   id: string;
   email: string;
   role: UserRole;
+  accountStatus: AccountStatus;
 }
 
 declare global {
@@ -89,6 +90,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     id: state.id,
     email: state.email,
     role: state.role,
+    accountStatus: state.accountStatus,
   };
 
   next();

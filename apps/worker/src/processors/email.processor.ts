@@ -8,7 +8,7 @@ import { emailDeadLetterQueue, EMAIL_QUEUE_NAME, type EmailJobData, type FailedE
 
 const templateCache = new Map<string, Handlebars.TemplateDelegate>();
 const templateNames: ReadonlySet<EmailJobData["templateName"]> = new Set([
-  "document-approved", "document-rejected", "quotation-ready", "quotation-accepted", "quotation-rejected", "invoice", "payment-recorded", "renewal-reminder",
+  "document-approved", "document-rejected", "quotation-ready", "quotation-accepted", "quotation-rejected", "invoice", "payment-recorded", "renewal-reminder", "contact-inquiry", "phase-completed", "phase-rejected", "account-approved",
 ]);
 const defaultSubjects: Record<EmailJobData["templateName"], string> = {
   "document-approved": "Your document was approved",
@@ -19,18 +19,51 @@ const defaultSubjects: Record<EmailJobData["templateName"], string> = {
   invoice: "Your invoice is ready",
   "payment-recorded": "Your payment was recorded",
   "renewal-reminder": "Renewal reminder",
+  "contact-inquiry": "New website inquiry",
+  "phase-completed": "A document phase was completed",
+  "phase-rejected": "A document phase needs attention",
+  "account-approved": "Your account has been approved",
 };
 
-function renderTemplate(templateName: EmailJobData["templateName"], data: Record<string, unknown>): string {
+/** Resolve the templates directory, preferring compiled output, falling back to src. */
+function templatesDir(): string {
+  const compiledDir = path.join(__dirname, "..", "templates");
+  const sourceDir = path.join(process.cwd(), "src", "templates");
+  return fs.existsSync(compiledDir) ? compiledDir : sourceDir;
+}
+
+// Shared branded layout partial (PROJECT-BRIEF §7.7). Registered once; templates that
+// want it reference {{> layout}}. Resolved the same way as full templates.
+let partialsRegistered = false;
+function registerPartials(): void {
+  if (partialsRegistered) return;
+  const layoutPath = path.join(templatesDir(), "_layout.hbs");
+  if (fs.existsSync(layoutPath)) {
+    Handlebars.registerPartial("layout", fs.readFileSync(layoutPath, "utf8"));
+  }
+  partialsRegistered = true;
+}
+
+/**
+ * Renders `templateName` in `locale`, preferring `<name>.<locale>.hbs` and falling
+ * back to `<name>.hbs` for templates that are not yet localized. Cached per
+ * (template, resolved file).
+ */
+function renderTemplate(templateName: EmailJobData["templateName"], data: Record<string, unknown>, locale?: EmailJobData["locale"]): string {
   if (!templateNames.has(templateName)) throw new Error(`Unknown email template: ${templateName}`);
-  let template = templateCache.get(templateName);
+  registerPartials();
+
+  const dir = templatesDir();
+  const resolvedLocale = locale ?? "es-MX";
+  const localizedPath = path.join(dir, `${templateName}.${resolvedLocale}.hbs`);
+  const genericPath = path.join(dir, `${templateName}.hbs`);
+  const templatePath = fs.existsSync(localizedPath) ? localizedPath : genericPath;
+
+  let template = templateCache.get(templatePath);
   if (!template) {
-    const compiledTemplatePath = path.join(__dirname, "..", "templates", `${templateName}.hbs`);
-    const sourceTemplatePath = path.join(process.cwd(), "src", "templates", `${templateName}.hbs`);
-    const templatePath = fs.existsSync(compiledTemplatePath) ? compiledTemplatePath : sourceTemplatePath;
     const source = fs.readFileSync(templatePath, "utf8");
     template = Handlebars.compile(source, { strict: true });
-    templateCache.set(templateName, template);
+    templateCache.set(templatePath, template);
   }
   return template(data);
 }
@@ -40,7 +73,7 @@ function toText(html: string): string {
 }
 
 export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
-  const html = renderTemplate(job.data.templateName, job.data.data);
+  const html = renderTemplate(job.data.templateName, job.data.data, job.data.locale);
   const result = await sendEmail({ to: job.data.to, subject: job.data.subject ?? defaultSubjects[job.data.templateName], html, text: toText(html) });
   if (!result.delivered) throw new Error(`Email delivery failed via ${result.transport} transport`);
 }

@@ -1,0 +1,9 @@
+{{#> layout}}
+  <h1 style="font-size:20px; margin:0 0 12px;">Una fase requiere atención</h1>
+  <p style="margin:0 0 12px;">Una fase de su documento <strong>{{documentName}}</strong> fue marcada como rechazada y requiere su atención.</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+    <tr><td style="padding:4px 0; color:#64748b;">Fase</td><td style="padding:4px 0 4px 16px;"><strong>{{phaseName}}</strong></td></tr>
+  </table>
+  {{#if note}}<p style="margin:0 0 16px; padding:12px; background:#fef2f2; border-radius:6px; border:1px solid #fecaca;">{{note}}</p>{{/if}}
+  <p style="margin:0 0 20px;"><a href="{{portalUrl}}" style="background:#0f172a; color:#ffffff; padding:10px 18px; border-radius:6px; text-decoration:none;">Ver su documento</a></p>
+{{/layout}}

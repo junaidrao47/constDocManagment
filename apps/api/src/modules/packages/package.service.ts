@@ -4,6 +4,7 @@ import { ServiceEntity } from "../../entities/service.entity";
 import { SubscriptionEntity } from "../subscriptions/subscription.entity";
 import { HttpError } from "../../utils/http-error";
 import { categoryService } from "../categories/category.service";
+import { removeCatalogObject, saveCatalogObject } from "../../utils/s3";
 import { PackageEntity } from "./package.entity";
 
 export interface PackageInput {
@@ -34,6 +35,7 @@ function serializePackage(pkg: PackageEntity) {
     price: Number(pkg.price),
     durationDays: pkg.durationDays,
     description: pkg.description ?? null,
+    imageUrl: pkg.imageUrl ?? null,
     isActive: pkg.isActive,
     isFeatured: pkg.isFeatured,
     sortOrder: pkg.sortOrder,
@@ -136,6 +138,33 @@ export const packageService = {
     const pkg = await findPackageOr404(id);
     pkg.isActive = isActive;
     await repository.save(pkg);
+    return this.get(id);
+  },
+  /**
+   * Stores (or replaces) the package's marketing image. Reuses the catalog object store
+   * (`packages/<id>/main/...`), so the existing `/api/public/catalog/images/*` route serves
+   * it with no new serving code. The previous object, if any, is deleted after the row is
+   * saved so a failed save never orphans the live image.
+   */
+  async setImage(id: string, file: { buffer: Buffer; originalName: string; mimeType: string }) {
+    const repository = AppDataSource.getRepository(PackageEntity);
+    const pkg = await findPackageOr404(id);
+    const previousKey = pkg.imageKey ?? null;
+    const { key, url } = await saveCatalogObject(pkg.id, "package", file.originalName, file.buffer, file.mimeType, "main");
+    pkg.imageUrl = url;
+    pkg.imageKey = key;
+    await repository.save(pkg);
+    if (previousKey && previousKey !== key) await removeCatalogObject(previousKey);
+    return this.get(id);
+  },
+  async removeImage(id: string) {
+    const repository = AppDataSource.getRepository(PackageEntity);
+    const pkg = await findPackageOr404(id);
+    const previousKey = pkg.imageKey ?? null;
+    pkg.imageUrl = null;
+    pkg.imageKey = null;
+    await repository.save(pkg);
+    if (previousKey) await removeCatalogObject(previousKey);
     return this.get(id);
   },
   async remove(id: string) {

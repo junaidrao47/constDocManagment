@@ -69,6 +69,7 @@ export const publicService = {
       isFeatured: pkg.isFeatured,
       price: numberValue(pkg.price),
       durationDays: pkg.durationDays,
+      imageUrl: pkg.imageUrl ?? null,
       category: pkg.category ? serializePublicCategory(pkg.category, locale) : null,
       services: (pkg.services ?? []).map((service) => ({
         id: service.id,

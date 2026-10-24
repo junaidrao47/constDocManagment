@@ -3,7 +3,8 @@ import { Column, Entity, PrimaryColumn } from "typeorm";
 /**
  * Key-value store for admin-editable application settings.
  * The primary key is `key` (not a UUID) because settings are addressed by name.
- * Whitelisted keys: "currency", "quote_validity_days".
+ * Whitelisted keys (see admin-pricing.schema.ts): "currency", "quote_validity_days",
+ * "payment_terms_days", "contact_recipient_email".
  */
 @Entity({ name: "app_settings" })
 export class AppSettingEntity {

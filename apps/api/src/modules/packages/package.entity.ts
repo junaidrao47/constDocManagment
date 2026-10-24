@@ -42,6 +42,19 @@ export class PackageEntity extends AppBaseEntity {
 	@Column({ type: "text", nullable: true })
 	description?: string | null;
 
+	/**
+	 * Marketing image for the public card. `imageUrl` is what the site renders (a local
+	 * `/api/public/catalog/images/...` path, or an absolute S3 URL in S3 mode); `imageKey`
+	 * is the storage key kept so the old object can be removed when the image is replaced.
+	 * Both null until an admin uploads one, in which case the card falls back to its
+	 * category image. Stored via `saveCatalogObject(id, "package", ...)`.
+	 */
+	@Column({ name: "image_url", type: "varchar", length: 1024, nullable: true })
+	imageUrl?: string | null;
+
+	@Column({ name: "image_key", type: "varchar", length: 512, nullable: true })
+	imageKey?: string | null;
+
 	/** Featured packages sort first, then by sortOrder, then by name. */
 	@Column({ name: "is_featured", type: "boolean", default: false })
 	isFeatured!: boolean;

@@ -93,7 +93,7 @@ export const LocationUpdateSchema = z.object({
 
 // --- Settings ---
 
-const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days"] as const;
+const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days", "contact_recipient_email"] as const;
 export type SettingKey = (typeof ALLOWED_KEYS)[number];
 
 export const SettingKeyParamSchema = z.object({
@@ -117,6 +117,12 @@ export const SettingUpdateSchema = z.discriminatedUnion("key", [
   z.object({
     key: z.literal("payment_terms_days"),
     value: z.coerce.number().int().min(1).max(365),
+  }),
+  z.object({
+    // Where the public contact form delivers inquiries. Validated as an email so a typo
+    // cannot silently break delivery.
+    key: z.literal("contact_recipient_email"),
+    value: z.string().trim().email("must be a valid email address").max(254),
   }),
 ]);
 

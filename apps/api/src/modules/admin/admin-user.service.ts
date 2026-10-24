@@ -57,6 +57,8 @@ function serializeUser(user: UserEntity) {
     phone: user.phone ?? null,
     role: user.role,
     isActive: user.isActive,
+    accountStatus: user.accountStatus,
+    preferredLocale: user.preferredLocale,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

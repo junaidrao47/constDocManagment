@@ -14,6 +14,10 @@ import { AppBaseEntity } from "./base.entity";
  */
 @Entity({ name: "customer_manager_assignments" })
 export class CustomerManagerAssignmentEntity extends AppBaseEntity {
+  /** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+  @Column({ name: "is_demo", type: "boolean", default: false })
+  isDemo!: boolean;
+
   @Column({ name: "customer_id", type: "uuid" })
   @Index({ unique: true })
   customerId!: string;

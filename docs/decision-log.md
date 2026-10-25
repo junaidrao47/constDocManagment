@@ -855,3 +855,109 @@ not expose; the user approved a small read-only addition (no writes, no schema c
 ### Not changed
 - API auth stays Bearer/sessionStorage; the portal adds only a non-HttpOnly presence-flag cookie for the
   Next middleware route guard (no token in the cookie, no switch to cookie auth).
+
+## 2026-10-25 — Public-site SEO, brand rename cleanup, and i18n approach
+
+### Context
+Autopilot work across the three colocated repos (backend, admin-frontend, customer-portal). Owner priorities:
+professional public website + SEO first, full bilingual, demo data with an `is_demo` column, editable
+calculator + CMS. Phase 0 discovery recorded in `docs/phase0-discovery.md`; client facts in `docs/CLIENT-FACTS.md`.
+
+### Decisions
+- **Brand (W8):** removed the last user-facing "ConstDoc" strings — `apps/api/src/utils/quotation-pdf.ts`
+  (PDF heading → "Grupo G2H · Servicios Integrales"), `apps/worker/src/crons/renewal.cron.ts` (email subject),
+  and `customer-portal` contact page email (→ `contacto@grupog2h.com`, the confirmed brand domain).
+  Identifiers (package/db/docker names, storage keys, `constdoc.*` cookies, path aliases) were deliberately
+  left unchanged.
+- **i18n:** the customer-portal already ships a working cookie-based locale system (`src/lib/locale.ts`,
+  `messages.ts`, `locale-toggle`). We extend that for full bilingual content rather than migrate to
+  `next-intl` — swapping i18n frameworks on a running app is high-risk for no user-visible gain. Full-page
+  string extraction continues within this system.
+- **SEO (customer-portal):** added `app/sitemap.ts` (static routes + live service/package slugs, fails soft
+  to static when the API is down), `app/robots.ts` (portal/onboarding/auth disallowed), `app/manifest.ts`,
+  site-wide schema.org JSON-LD (`components/seo/json-ld.tsx`), `metadataBase` + OpenGraph/Twitter + canonicals,
+  and real per-page titles/descriptions. Base URL from `NEXT_PUBLIC_SITE_URL` (default `https://grupog2h.com`).
+- **Structured data is Organization + WebSite only.** No `LocalBusiness` address/phone, no founding date,
+  no ratings — those facts are unconfirmed (R3). Upgrade to `LocalBusiness` once the client confirms address.
+- **hreflang:** the cookie-based locale serves one URL per page, so per-locale `alternates.languages` are
+  intentionally omitted. Proper hreflang needs path-based locales (`/en`, `/es-MX`) — a separate, larger change.
+
+### Verified
+- `customer-portal`: `npx tsc --noEmit` → clean.
+- `apps/api` and `apps/worker`: `tsc --noEmit` → clean.
+
+## 2026-10-25 — W1 demo data + `is_demo` flag (migration 1930000000000)
+
+### Context
+Owner wants every portal testable with realistic data and a one-command teardown; chose an `is_demo`
+column + migration over a naming convention. Data model mapped with Graphify (clean baseline: 31 entities,
+17 advisory/untracked findings, no breaking drift).
+
+### Decisions
+- **`is_demo boolean NOT NULL DEFAULT false`** added to 11 "root" tables (users, categories, services,
+  packages, documents, quotations, invoices, payments, subscriptions, agent_customer_assignments,
+  customer_manager_assignments) via `1930000000000-AddIsDemoFlag` (literal ALTERs). The column is on both
+  the entity and the migration for every one of the 11 — drift check re-run after: still 17 findings, no new/breaking.
+- **Child/history/join rows carry no flag** (document_versions, document_phases, *_history, quotation_items,
+  customer_profiles, service_required_documents, refresh_tokens, notifications_log, package_services) — they are
+  purged through their parent's FK. A demo child only ever references a demo parent, so non-demo data is never touched.
+- **`scripts/seed-demo.ts`** — idempotent (found-or-created on natural keys; two runs → identical counts),
+  refuses production unless `ALLOW_DEMO_SEED=true`. **`scripts/purge-demo.ts`** — one transaction, FK-safe order.
+  npm scripts `db:seed:demo` / `db:purge:demo`. Credentials in `docs/DEMO-ACCOUNTS.md`.
+- Demo accounts: `.test` login domain + `@example.test` notification emails (never deliverable).
+
+### Verified (this session, against real Postgres in Docker)
+- `tsc --noEmit` clean. Migration ran; API restarted; `/health/ready` ok; category query selects `is_demo`.
+- Seed twice → identical counts (9 users, 5 cat, 7 svc, 2 pkg, 6 docs, 3 quot, 4 inv, 2 pay, 2 subs).
+- Demo revenue: paid invoices = payments = **$55,448 MXN**; non-demo users intact (20).
+- Purge → all demo counts 0, non-demo intact, no FK errors; re-seed restores. Demo admin + customer login → 200.
+
+### Flagged
+- `/api/admin/analytics` is a **stub** (`"not implemented"`) — demo revenue is in the DB but needs the
+  analytics aggregation endpoint built before it shows in a dashboard. Separate task.
+
+## 2026-10-25 — W3: Admin estimation calculator UI (admin-frontend)
+
+**Decision.** Built a single `/admin/calculator` ("Calculator & pricing") page instead of three
+thin pages. It consolidates the DB-driven pricing rules the public calculator reads —
+worker ranges, locations (multiplier + city fee), industries (price weight) and quote settings
+(validity days, payment terms, currency) — into tabs, with a sticky **live estimate** panel that
+POSTs to the existing `/api/public/quotations/calculate` and recomputes whenever a rule is edited.
+
+- New files: `src/components/pricing/rule-crud.tsx` (generic list+create+edit+deactivate over a
+  rule endpoint; form values are strings, parent `toBody` does the Number()/null conversion so a
+  blank numeric input is never `NaN`) and `src/app/(admin)/admin/calculator/page.tsx`.
+- Nav: replaced the three `ready:false` stubs (Industries / Worker ranges / Locations) with one
+  `ready:true` "Calculator & pricing" entry. No nav test referenced the old labels.
+- Reuses existing backend endpoints only (admin pricing CRUD + public calculate); no backend change.
+- Verified: `tsc --noEmit` clean, `eslint` clean, and live against the running stack —
+  Construction + CDMX + 10 workers + 2 services → $54,750 MXN, matching the engine formula
+  (worker base × location multiplier × industry weight + service charges + city fee).
+- Not yet run: `npm run build` (admin dev server holds `.next`; build needs dev stopped).
+
+## 2026-10-25 — Admin dashboard KPIs (admin-frontend)
+
+**Decision.** Replaced the static `/admin` welcome with an at-a-glance KPI summary that reads the
+**real** `GET /admin/analytics/overview` (last 30 days). Tiles: revenue (MXN), customers (+approved),
+pending approvals, documents in review; plus a "documents waiting per manager" list, new-customers
+count, and quick links. Subscriptions deliberately omitted — `/admin/subscriptions` and the bare
+`/admin/analytics` are stubs and the rules forbid building UI on stubs. Full charts remain on
+`/admin/analytics`. Verified: `tsc` + `eslint` clean; live screenshot shows real demo data
+($747,348 revenue, 18 customers, per-manager workload). `npm run build` not run (dev holds `.next`).
+
+## 2026-10-25 — Announcement / offer bar (backend + admin + portal)
+
+**Decision.** Added an admin-toggled announcement bar above the public navbar, driven by
+`app_settings` (no migration — key/value JSONB table already exists). New setting keys:
+`offer_bar_enabled` (bool), `offer_bar_text_en`, `offer_bar_text_es`, `offer_bar_link`, added to the
+settings allowlist and discriminated-union validator in `admin-pricing.schema.ts`.
+
+- Backend: new public read `GET /api/public/site-config` → `{ offerBar: { enabled, textEn, textEs,
+  link } }` (`publicService.siteConfig`, reusing the existing `getSettingValue` helper). No auth.
+- Admin: an "Announcement bar" card on `/admin/settings` (enable toggle + bilingual message + link),
+  saved via the existing `PUT /admin/settings/:key`. Enabling is blocked until both languages are set.
+- Portal: `OfferBar` component rendered at the top of `PublicHeader` (not sticky, so it scrolls away
+  while the nav stays pinned); locale-aware, links to a path or absolute URL, hidden when disabled.
+- Verified: backend `typecheck` clean; `npm run smoke` = 48 passed / 0 failed / 2 pre-existing skips
+  (no regression); live round-trip (admin PUT → `/public/site-config` → bar visible on the home page);
+  invalid boolean rejected with 400. Both frontends `tsc` clean.

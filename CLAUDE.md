@@ -12,6 +12,7 @@
 - Worker typecheck: `cd apps/worker && npx tsc --noEmit -p .`
 - Full stack: `docker compose up --build` (repo root), then `GET http://localhost:3001/health/ready`.
 - Demo data: `npm run db:seed` (logins in `src/scripts/seed-phase0.ts`). Seed is additive (find-or-create); run `npm run db:reset` first for a clean Mexican-only dataset. Seeded demo users: admin/manager/agent/customer plus `customer2@test.com` and `agent2@test.com`. Locations are CDMX / Monterrey / Guadalajara.
+- **Full portal demo set (W1):** `npm run db:seed:demo` / `npm run db:purge:demo` (or `docker compose exec api npx ts-node src/scripts/seed-demo.ts`). Every row is `is_demo=true`; purge removes the whole set (child rows via FK). Idempotent; refuses `NODE_ENV=production` unless `ALLOW_DEMO_SEED=true`. Accounts + password in `docs/DEMO-ACCOUNTS.md` (all `Demo1234!`, `.test` domain). Gives customers/managers/documents (all statuses)/quotations/invoices/payments (~$55k MXN revenue)/subscriptions. Note: `/admin/analytics` is still a stub, so demo revenue is in the DB but not yet on a dashboard.
 
 ## Gotchas
 - Currency is **MXN** (client is Mexican). Never change it.

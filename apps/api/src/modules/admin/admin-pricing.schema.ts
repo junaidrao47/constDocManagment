@@ -93,7 +93,17 @@ export const LocationUpdateSchema = z.object({
 
 // --- Settings ---
 
-const ALLOWED_KEYS = ["currency", "quote_validity_days", "payment_terms_days", "contact_recipient_email"] as const;
+const ALLOWED_KEYS = [
+  "currency",
+  "quote_validity_days",
+  "payment_terms_days",
+  "contact_recipient_email",
+  // Announcement/offer bar shown above the public navbar (admin-toggled).
+  "offer_bar_enabled",
+  "offer_bar_text_en",
+  "offer_bar_text_es",
+  "offer_bar_link",
+] as const;
 export type SettingKey = (typeof ALLOWED_KEYS)[number];
 
 export const SettingKeyParamSchema = z.object({
@@ -123,6 +133,24 @@ export const SettingUpdateSchema = z.discriminatedUnion("key", [
     // cannot silently break delivery.
     key: z.literal("contact_recipient_email"),
     value: z.string().trim().email("must be a valid email address").max(254),
+  }),
+  // ── Announcement/offer bar ──────────────────────────────────────────────────
+  z.object({
+    key: z.literal("offer_bar_enabled"),
+    value: z.boolean(),
+  }),
+  z.object({
+    key: z.literal("offer_bar_text_en"),
+    value: z.string().trim().max(200),
+  }),
+  z.object({
+    key: z.literal("offer_bar_text_es"),
+    value: z.string().trim().max(200),
+  }),
+  z.object({
+    // A relative path (e.g. "/packages") or absolute URL the bar links to; empty = no link.
+    key: z.literal("offer_bar_link"),
+    value: z.string().trim().max(500),
   }),
 ]);
 

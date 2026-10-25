@@ -11,6 +11,10 @@ import { AppBaseEntity } from "../../entities/base.entity";
  */
 @Entity({ name: "categories" })
 export class CategoryEntity extends AppBaseEntity {
+  /** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+  @Column({ name: "is_demo", type: "boolean", default: false })
+  isDemo!: boolean;
+
   @Index({ unique: true })
   @Column({ type: "varchar", length: 180 })
   slug!: string;

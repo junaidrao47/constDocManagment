@@ -21,7 +21,7 @@ export async function sendRenewalReminders(): Promise<number> {
   for (const row of rows) {
     await sendTransactionalEmail({
       to: row.email,
-      subject: "Your ConstDoc subscription is renewing soon",
+      subject: "Your Grupo G2H subscription is renewing soon",
       text: `Your subscription renews on ${new Date(row.endDate).toLocaleDateString()}. Please contact us if you need help.`,
       html: `<p>Your subscription renews on <strong>${new Date(row.endDate).toLocaleDateString()}</strong>.</p><p>Please contact us if you need help.</p>`,
     });

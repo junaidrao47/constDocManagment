@@ -7,6 +7,10 @@ import { QuotationItemEntity } from "../../entities/quotation-item.entity";
 
 @Entity({ name: "quotations" })
 export class QuotationEntity extends AppBaseEntity {
+	/** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+	@Column({ name: "is_demo", type: "boolean", default: false })
+	isDemo!: boolean;
+
 	@Column({ name: "customer_id", type: "uuid" })
 	@Index()
 	customerId!: string;

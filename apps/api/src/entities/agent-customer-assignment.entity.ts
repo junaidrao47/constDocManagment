@@ -25,6 +25,10 @@ import { AppBaseEntity } from "./base.entity";
 @Entity({ name: "agent_customer_assignments" })
 @Unique(["agentId", "customerId"])
 export class AgentCustomerAssignmentEntity extends AppBaseEntity {
+  /** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+  @Column({ name: "is_demo", type: "boolean", default: false })
+  isDemo!: boolean;
+
   @Column({ name: "agent_id", type: "uuid" })
   @Index()
   agentId!: string;

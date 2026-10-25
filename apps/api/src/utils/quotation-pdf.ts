@@ -6,7 +6,7 @@ function escapePdf(value: string): string {
 
 export function renderQuotationPdf(quotation: QuotationEntity): Buffer {
   const lines = [
-    "ConstDoc Management",
+    "Grupo G2H · Servicios Integrales",
     `Quotation ${quotation.id}`,
     `Status: ${quotation.status}`,
     `Created: ${quotation.createdAt.toISOString().slice(0, 10)}`,

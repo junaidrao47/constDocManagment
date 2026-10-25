@@ -24,6 +24,7 @@ function send<T>(handler: (req: Request) => Promise<T>) {
   };
 }
 
+publicRouter.get("/site-config", send(() => publicService.siteConfig()));
 publicRouter.get("/categories", send((req) => publicService.listCategories(localeFromRequest(req))));
 publicRouter.get(
   "/services",

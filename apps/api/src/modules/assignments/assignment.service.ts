@@ -271,13 +271,20 @@ export const assignmentService = {
    * customers, who must see nothing. Callers have to branch on that before building
    * an `In([])`, which Postgres rejects.
    *
-   * Manager and admin return `null` by the decision of 2026-10-14: there is no team
-   * concept anywhere in the schema to narrow a manager against, so narrowing them
-   * would have meant inventing one.
+   * Agents and managers are both scoped to their assignments; admin returns `null` (all).
+   *
+   * Managers were `null` (all) under the 2026-10-14 decision, taken before any manager↔customer
+   * link existed. The 2026-10-24 decisions (PROJECT-BRIEF §11.2) added `customer_manager_assignments`
+   * and a "My customers" workspace, so a manager now narrows to their assigned customers — which
+   * also keeps the "My Documents Queue" consistent with what a manager may actually act on
+   * (phase/status changes require `isManagerFor`, so an unscoped queue showed docs that 403'd).
    */
   async customerScopeFor(actor: { id: string; role: UserRole }): Promise<string[] | null> {
     if (actor.role === UserRole.Agent) {
       return this.listForAgent(actor.id);
+    }
+    if (actor.role === UserRole.Manager) {
+      return this.listCustomersForManager(actor.id);
     }
 
     return null;

@@ -16,6 +16,10 @@ export enum InvoiceStatus {
 
 @Entity({ name: "invoices" })
 export class InvoiceEntity extends AppBaseEntity {
+  /** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+  @Column({ name: "is_demo", type: "boolean", default: false })
+  isDemo!: boolean;
+
   @Column({ name: "quotation_id", type: "uuid", nullable: true, unique: true })
   quotationId?: string | null;
 

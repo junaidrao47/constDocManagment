@@ -5,6 +5,10 @@ import { CategoryEntity } from "../modules/categories/category.entity";
 
 @Entity({ name: "services" })
 export class ServiceEntity extends AppBaseEntity {
+  /** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+  @Column({ name: "is_demo", type: "boolean", default: false })
+  isDemo!: boolean;
+
   @Column({ type: "varchar", length: 150 })
   @Index({ unique: true })
   name!: string;

@@ -32,6 +32,29 @@ export async function getSettingValue(key: string): Promise<unknown> {
 }
 
 export const publicService = {
+  /**
+   * Public site configuration the marketing site reads on every page (no auth).
+   * Currently the admin-toggled announcement/offer bar. Values live in app_settings,
+   * so the admin edits them without a deploy.
+   */
+  async siteConfig() {
+    const [enabled, textEn, textEs, link] = await Promise.all([
+      getSettingValue("offer_bar_enabled"),
+      getSettingValue("offer_bar_text_en"),
+      getSettingValue("offer_bar_text_es"),
+      getSettingValue("offer_bar_link"),
+    ]);
+    const asText = (v: unknown) => (typeof v === "string" ? v : "");
+    return {
+      offerBar: {
+        enabled: enabled === true,
+        textEn: asText(textEn),
+        textEs: asText(textEs),
+        link: asText(link),
+      },
+    };
+  },
+
   async listCategories(locale: Locale) {
     return categoryService.listPublic(locale);
   },

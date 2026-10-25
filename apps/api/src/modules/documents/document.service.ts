@@ -26,7 +26,7 @@ import { toPublicUser, type PublicUser } from "../../utils/serialize-user";
 import { notify, type NotificationType } from "../notifications/notify.service";
 import { webUrlFor } from "../../utils/web-url";
 import { Locale, pickLocale } from "../../utils/i18n";
-import { UserRole } from "../users/user.entity";
+import { UserRole, UserEntity } from "../users/user.entity";
 import { DocumentEntity } from "./document.entity";
 import { DocumentVersionEntity, type DocumentVersionKind } from "./document-version.entity";
 import { DocumentPhaseEntity } from "./document-phase.entity";
@@ -366,7 +366,19 @@ export const documentService = {
       },
       order: { updatedAt: "DESC" },
     });
-    return Promise.all(documents.map(normalizeDocument));
+    const normalized = await Promise.all(documents.map(normalizeDocument));
+
+    // Attach the customer's display name so the staff queue shows a person, not a UUID.
+    // One batched read over the distinct customer ids, never a per-row query.
+    const customerIds = [...new Set(normalized.map((d) => d.customerId))];
+    const customers = customerIds.length
+      ? await AppDataSource.getRepository(UserEntity).find({
+          where: { id: In(customerIds) },
+          select: ["id", "name", "email"],
+        })
+      : [];
+    const nameById = new Map(customers.map((c) => [c.id, c.name || c.email]));
+    return normalized.map((d) => ({ ...d, customerName: nameById.get(d.customerId) ?? null }));
   },
 
   async getDocument(actor: DocumentActor, documentId: string) {

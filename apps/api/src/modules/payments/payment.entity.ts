@@ -11,6 +11,10 @@ export enum PaymentMethod {
 
 @Entity({ name: "payments" })
 export class PaymentEntity {
+	/** W1 demo-data flag; demo rows are removed by scripts/purge-demo.ts. */
+	@Column({ name: "is_demo", type: "boolean", default: false })
+	isDemo!: boolean;
+
 	@PrimaryGeneratedColumn("uuid")
 	id!: string;
 

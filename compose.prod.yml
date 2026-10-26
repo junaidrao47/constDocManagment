@@ -19,6 +19,12 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      # Started (not healthy) is enough: nginx only needs the Docker DNS names
+      # `customer` and `admin` to resolve its upstreams at config load.
+      customer:
+        condition: service_started
+      admin:
+        condition: service_started
 
   api:
     build:
@@ -64,6 +70,53 @@ services:
       redis:
         condition: service_healthy
       # The API owns migrations; wait for it before assuming the schema exists.
+      api:
+        condition: service_healthy
+
+  # Public marketing site + customer portal (Next.js standalone, sibling repo).
+  customer:
+    build:
+      context: ../customer-portal
+      args:
+        # Baked into the CLIENT bundle at build time — must be the PUBLIC https origin
+        # the browser will call. Override per deploy, e.g. https://api.<domain>/api.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_ORIGIN:-https://api.example.com/api}
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      # Server-side rendering runs inside the Docker network, so its fetches take the
+      # internal API directly (faster, no public round-trip). The client bundle keeps
+      # the public origin baked above.
+      NEXT_PUBLIC_API_URL: http://api:3001/api
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Admin + staff portal (Next.js standalone, sibling repo). Served on its own hostname.
+  admin:
+    build:
+      context: ../admin-frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${ADMIN_API_ORIGIN:-https://api.example.com/api}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://api:3001/api
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+    depends_on:
       api:
         condition: service_healthy
 

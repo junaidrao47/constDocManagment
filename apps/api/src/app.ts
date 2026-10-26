@@ -12,6 +12,7 @@ import { adminRouter } from "./modules/admin/admin.router";
 import { quotationRouter } from "./modules/quotations/quotation.router";
 import { userRouter } from "./modules/users/user.router";
 import { publicRouter } from "./modules/public/public.router";
+import { sesWebhookRouter } from "./modules/email-events/ses-webhook.router";
 import { agentRouter } from "./modules/agent/agent.router";
 import { managerRouter } from "./modules/manager/manager.router";
 import { authenticate } from "./middleware/authenticate";
@@ -155,6 +156,8 @@ export function createApp() {
   app.use("/api/agent", authenticate, agentRouter);
   app.use("/api/public", publicRouter);
   app.use("/api/public/catalog", publicCatalogRouter);
+  // Public, unauthenticated, but every message is SNS-signature-verified in the router.
+  app.use("/api/webhooks/ses", sesWebhookRouter);
   app.use("/api/quotations", authenticate, enforceAccountStatus(), quotationRouter);
   // Admin only. `manager` used to be listed here and so inherited the entire admin
   // surface — user management, pricing configuration, analytics. Manager-specific

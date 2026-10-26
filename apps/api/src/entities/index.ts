@@ -14,6 +14,7 @@ export * from "./quotation-item.entity";
 export * from "./document-status-history.entity";
 export * from "./invoice.entity";
 export * from "./notification-log.entity";
+export * from "./email-suppression.entity";
 export * from "./quotation-status-history.entity";
 export * from "./app-setting.entity";
 export * from "./agent-customer-assignment.entity";

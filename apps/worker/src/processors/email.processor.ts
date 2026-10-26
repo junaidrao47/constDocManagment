@@ -3,6 +3,7 @@ import path from "path";
 import Handlebars from "handlebars";
 import { Job, Worker } from "bullmq";
 import { redisConnection } from "../config/redis";
+import { AppDataSource } from "../config/database";
 import { sendEmail } from "../utils/email";
 import { emailDeadLetterQueue, EMAIL_QUEUE_NAME, type EmailJobData, type FailedEmailJobData } from "../queues/email.queue";
 
@@ -72,7 +73,30 @@ function toText(html: string): string {
   return html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Has this address bounced or complained? SES delivery to a suppressed address hurts
+ * sender reputation, so the worker checks the list the SES webhook populates before
+ * every send. Fails open (sends) on a read error so a transient DB blip cannot halt all
+ * mail — the suppression window it leaves is small and logged.
+ */
+async function isSuppressed(email: string): Promise<boolean> {
+  try {
+    const rows: unknown[] = await AppDataSource.query(
+      `SELECT 1 FROM email_suppressions WHERE email = $1 LIMIT 1`,
+      [email.trim().toLowerCase()],
+    );
+    return rows.length > 0;
+  } catch (error) {
+    console.error(`[worker:email] suppression check failed: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+
 export async function processEmailJob(job: Job<EmailJobData>): Promise<void> {
+  if (await isSuppressed(job.data.to)) {
+    console.warn(`[worker:email] skipped suppressed recipient (template ${job.data.templateName})`);
+    return;
+  }
   const html = renderTemplate(job.data.templateName, job.data.data, job.data.locale);
   const result = await sendEmail({ to: job.data.to, subject: job.data.subject ?? defaultSubjects[job.data.templateName], html, text: toText(html) });
   if (!result.delivered) throw new Error(`Email delivery failed via ${result.transport} transport`);

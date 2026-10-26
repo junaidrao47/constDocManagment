@@ -23,3 +23,92 @@ jobs:
       - run: npm run typecheck:test
       - run: npm test
       - run: npm run build
+      # Fails the build on any high/critical production vulnerability.
+      - run: npm audit --omit=dev --audit-level=high
+
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/worker/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit -p .
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  # The authoritative gate: the full milestone story over HTTP against a real
+  # Postgres and Redis (see CLAUDE.md — a green `npm test` does not prove persistence).
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: construction_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d construction_db"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/construction_db
+      REDIS_URL: redis://localhost:6379
+      # CI-only throwaway secrets (>= 32 chars, must differ). Never real values.
+      JWT_SECRET: ci_jwt_secret_0123456789abcdef0123456789abcdef
+      JWT_REFRESH_SECRET: ci_refresh_secret_fedcba9876543210fedcba9876543210
+      CORS_ORIGIN: http://localhost:3002
+      SMOKE_API_URL: http://localhost:3001/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - name: Start API
+        run: |
+          npm run build
+          node dist/server.js &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+      - name: Wait for readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/health/ready >/dev/null; then echo ready; exit 0; fi
+            sleep 2
+          done
+          echo "API did not become ready"; exit 1
+      - run: npm run smoke
+
+  # Validates the api + worker production Dockerfiles build. The full prod stack
+  # (incl. the two Next frontends from sibling repos) and ECR push/deploy via OIDC
+  # live outside this repo's checkout — wire those once the AWS account/role ARNs
+  # and the final domain are provided (see docs/runbook.md).
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target production -t g2h-api ./apps/api
+      - run: docker build --target production -t g2h-worker ./apps/worker

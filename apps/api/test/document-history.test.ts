@@ -91,7 +91,7 @@ describe("GET /api/documents/:id/history", () => {
     const admin = await seedUser({ role: UserRole.Admin, email: "admin.404hist@test.com" });
 
     const response = await request(testApp())
-      .get("/api/documents/99999999-9999-9999-9999-999999999999/history")
+      .get("/api/documents/99999999-9999-4999-8999-999999999999/history")
       .set("Authorization", bearer(mintToken(admin)));
 
     expect(response.status).toBe(404);

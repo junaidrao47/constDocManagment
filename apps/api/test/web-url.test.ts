@@ -83,7 +83,7 @@ describe("links inside outgoing email are absolute and point at real portal rout
   it("sends a portalUrl with no trailing slash when a quotation is sent", async () => {
     const customer = await seedUser({ role: UserRole.Customer, email: "customer.weburl2@test.com" });
     const manager = await seedUser({ role: UserRole.Manager, email: "manager.weburl@test.com" });
-    const quotationId = "33333333-3333-3333-3333-333333333333";
+    const quotationId = "33333333-3333-4333-8333-333333333333";
 
     fakeDb.quotations().seed({
       id: quotationId,

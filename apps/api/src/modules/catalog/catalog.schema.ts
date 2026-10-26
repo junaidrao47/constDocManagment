@@ -3,7 +3,7 @@ import { CatalogFieldType, CatalogItemStatus } from "./catalog.entity";
 
 const uuid = z.string().uuid();
 const slug = z.string().trim().min(1).max(180).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "must be a URL-safe slug");
-const jsonObject = z.record(z.unknown());
+const jsonObject = z.record(z.string(), z.unknown());
 
 export const CatalogCategorySchema = z.object({
   name: z.string().trim().min(1).max(150),

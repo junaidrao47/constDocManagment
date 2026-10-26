@@ -29,7 +29,7 @@ describe("status change notifications", () => {
   it("records a notification when a quotation status changes", async () => {
     const customer = await seedUser({ role: UserRole.Customer, email: "customer.quotations@test.com" });
     const manager = await seedUser({ role: UserRole.Manager, email: "manager.status@test.com" });
-    const quotationId = "11111111-1111-1111-1111-111111111111";
+    const quotationId = "11111111-1111-4111-8111-111111111111";
 
     fakeDb.quotations().seed({
       id: quotationId,

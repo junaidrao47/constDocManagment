@@ -1043,3 +1043,33 @@ Forged/unsigned messages and non-AWS cert hosts are rejected (403); malformed bo
 and complained addresses are suppressed idempotently and never mailed again. `npm run smoke`
 stays green (48 passed, 0 failed). Admin visibility/management of the list is left for the
 deferred email control panel.
+
+## 2026-10-27 — Production deployment to AWS EC2 (Docker, HTTPS)
+
+### Decision
+Deploy the whole stack to one EC2 host (`g2h-prod`, t3.medium, us-east-1, EIP 52.73.242.143) via
+`compose.prod.yml`, pulling prebuilt `linux/amd64` images from ECR
+(`.../g2h/{api,worker,portal,admin}`, each repo rolling its own `:latest`). nginx is the only
+service publishing ports (80/443); Postgres/Redis are unpublished and Redis now requires a
+password in prod. Secrets live only in `/opt/g2h/.env` (chmod 600, generated on-box); AWS creds
+come from the instance role `g2h-ec2-role` — no keys on the server or in git. TLS via certbot
+(one cert, SANs apex/www/api/admin) issued by webroot, with a twice-daily auto-renew cron;
+`nginx.conf` is bind-mounted so TLS edits are a reload, not an image rebuild. Nightly `pg_dump`
+→ `s3://g2h-prod-backups/postgres/` via `/opt/g2h/backup.sh` (cron 02:30 UTC) with a 30-day
+lifecycle rule. First admin created with `dist/scripts/create-admin.js` (env-driven, idempotent).
+Full process in `docs/deploy-runbook.md`.
+
+### Why
+One box keeps cost and operational surface small for a ~$100K system at first delivery. Pull-based
+ECR images mean the server never builds app code (fast, reproducible deploys); building on the
+laptop avoids swap on a t3.medium. nginx-only port exposure + Redis auth + role-based AWS creds
+satisfy the §7.8 security checklist. Bind-mounting nginx.conf makes TLS iteration safe without
+rebuilding the image. A brand-new box needs a one-time HTTP bootstrap config before the cert
+exists (documented), because the committed nginx.conf references cert paths at load time.
+
+### Result
+Stack live and healthy; 26 migrations applied (38 tables, applied on api boot). All four hosts
+serve valid HTTPS with HTTP→HTTPS redirect + HSTS; renewal dry-run succeeds. Production verified
+non-destructively (public API returns real data over TLS, auth path returns 401 for bad creds,
+all apps 200) — the same images passed `npm run smoke` 48/48 locally. First backup uploaded to S3.
+Open: repoint role S3 policy to `cosntdoc-images`; wire OIDC+SSM CI/CD; SES production access.

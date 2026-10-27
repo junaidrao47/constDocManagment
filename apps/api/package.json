@@ -11,6 +11,7 @@
     "admin:create": "ts-node src/scripts/create-admin.ts",
     "db:seed": "ts-node src/scripts/seed-phase0.ts",
     "db:seed:demo": "ts-node src/scripts/seed-demo.ts",
+    "db:seed:hero": "ts-node src/scripts/seed-hero.ts",
     "db:purge:demo": "ts-node src/scripts/purge-demo.ts",
     "db:reset": "ts-node src/scripts/reset-phase0.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -254,6 +254,11 @@ adminRouter.delete(
   validateParams(PricingIdParamSchema),
   send((req) => adminPricingService.deactivateService(req.params.id)),
 );
+adminRouter.post("/services/:id/image", validateParams(PricingIdParamSchema), uploadImage, send(async (req) => {
+  if (!req.file) throw new HttpError(400, "image is required");
+  return adminPricingService.setServiceImage(req.params.id, { buffer: req.file.buffer, originalName: req.file.originalname, mimeType: req.file.mimetype });
+}, 201));
+adminRouter.delete("/services/:id/image", validateParams(PricingIdParamSchema), send((req) => adminPricingService.removeServiceImage(req.params.id)));
 
 // ─── Pricing: Industries ─────────────────────────────────────────────────────
 

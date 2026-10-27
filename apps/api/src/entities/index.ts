@@ -26,3 +26,5 @@ export * from "../modules/documents/document-phase.entity";
 export * from "../modules/documents/document-phase-history.entity";
 export * from "../modules/documents/service-required-document.entity";
 export * from "../modules/customers/customer-profile.entity";
+export * from "../modules/cms/hero-slide.entity";
+export * from "../modules/cms/site-content.entity";

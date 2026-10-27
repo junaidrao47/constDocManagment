@@ -493,6 +493,34 @@ Document phases (`/api/documents`, phase writes are manager-of-the-customer or a
 Phase/approval emails go through the existing `email` queue, localized (`en` / `es-MX`) via the
 worker's `<template>.<locale>.hbs` resolution and a shared `_layout.hbs` partial.
 
+Homepage CMS — hero carousel + content (`/api/admin/cms`, admin only, audited via `updated_by`):
+- `GET /admin/cms/hero-slides` — all slides, ordered by position. **DONE**
+- `POST /admin/cms/hero-slides` — multipart: `image` (jpeg/png/webp ≤ 8 MB, magic-byte checked) + an
+  optional `data` JSON field of slide metadata (`HeroSlideSchema`). Stores under the public
+  `public/hero/` prefix. **DONE**
+- `GET /admin/cms/hero-slides/:id` — one slide. **DONE**
+- `PATCH /admin/cms/hero-slides/:id` — edit any field (`HeroSlidePatchSchema`). **DONE**
+- `PATCH /admin/cms/hero-slides/:id/active` body `{ isActive }` — toggle. **DONE**
+- `PATCH /admin/cms/hero-slides/reorder` body `{ ids:[] }` — position = array index. **DONE**
+- `DELETE /admin/cms/hero-slides/:id` — removes the row and its image object. **DONE**
+- `GET /admin/cms/settings` · `PUT /admin/cms/settings` — hero autoplay/default-duration/transition-ms/
+  pause-on-hover/loop + heading/body font + base text scale (fixed allow-lists). **DONE**
+- `GET /admin/cms/content` — every registered content key with EN/ES values, status, style. **DONE**
+- `GET /admin/cms/content/:key` · `PUT /admin/cms/content/:key` body `{ en, es, style?, publish? }`
+  (both locales required to publish, else `VALIDATION_FAILED`; values sanitized + length-capped).
+  **DONE**
+- `POST /admin/cms/content/:key/publish` body `{ publish }` — publish/unpublish. **DONE**
+- `GET /admin/cms/content/:key/history` — append-only published versions. **DONE**
+
+Public CMS reads (`/api/public`, no auth, 60 s `Cache-Control` + `ETag`/304):
+- `GET /public/hero?locale=es-MX|en` — active + in-schedule slides (locale-resolved text, timing,
+  focal point, overlay) plus the global carousel `settings`. **DONE**
+- `GET /public/content?locale=es-MX|en` — published content as a `{ key: { value, fontFamily,
+  fontWeight, sizeStep } }` map. **DONE**
+
+On any CMS change the API fires a signed (HMAC-SHA256, header `x-cms-signature`) best-effort
+revalidation webhook to `PORTAL_REVALIDATE_URL`; the portal verifies it with a timing-safe compare.
+
 
 
 

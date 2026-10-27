@@ -36,6 +36,8 @@ import {
   CatalogImageEntity,
   CatalogItemEntity,
 } from "../modules/catalog/catalog.entity";
+import { HeroSlideEntity } from "../modules/cms/hero-slide.entity";
+import { SiteContentEntity, SiteContentHistoryEntity } from "../modules/cms/site-content.entity";
 import { env } from "./env";
 
 export const databaseConfig = {
@@ -83,6 +85,9 @@ export const AppDataSource = new DataSource({
     CatalogFieldEntity,
     CatalogFieldValueEntity,
     CatalogImageEntity,
+    HeroSlideEntity,
+    SiteContentEntity,
+    SiteContentHistoryEntity,
   ],
   migrations: [migrationsGlob],
   synchronize: false,

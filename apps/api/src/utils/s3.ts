@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createPresignedPost, type PresignedPost } from "@aws-sdk/s3-presigned-post";
 import { env } from "../config/env";
@@ -24,6 +24,22 @@ function createS3Client(): S3Client {
   }
 
   return new S3Client({ region: env.awsRegion });
+}
+
+/**
+ * Bucket for PUBLIC website assets — homepage hero slides and catalog (service/package)
+ * images. These are served to anonymous visitors as plain `<img src>` URLs, so the bucket
+ * must allow public read. It is deliberately SEPARATE from the private documents bucket
+ * (`env.s3Bucket`), which stays locked down and is reached only through presigned URLs.
+ * Falls back to the documents bucket when `S3_PUBLIC_BUCKET` is unset, so behaviour is
+ * unchanged until the public bucket is provisioned.
+ */
+function publicImageBucket(): string | undefined {
+  return env.s3PublicBucket ?? env.s3Bucket;
+}
+
+function isPublicS3Configured(): boolean {
+  return Boolean(env.awsRegion && publicImageBucket());
 }
 
 export function createDocumentStorageKey(fileName: string): string {
@@ -57,10 +73,11 @@ export async function saveCatalogObject(
 ): Promise<{ key: string; url: string }> {
   const key = `${entityType}s/${itemId}/${area}/${crypto.randomUUID()}${catalogExtension(originalName)}`;
 
-  if (isS3Configured() && env.s3Bucket) {
+  const bucket = publicImageBucket();
+  if (isPublicS3Configured() && bucket) {
     const client = createS3Client();
-    await client.send(new PutObjectCommand({ Bucket: env.s3Bucket, Key: key, Body: buffer, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }));
-    return { key, url: `https://${env.s3Bucket}.s3.${env.awsRegion}.amazonaws.com/${key}` };
+    await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }));
+    return { key, url: `https://${bucket}.s3.${env.awsRegion}.amazonaws.com/${key}` };
   }
 
   const filePath = getLocalCatalogPath(key);
@@ -70,7 +87,72 @@ export async function saveCatalogObject(
 }
 
 export async function removeCatalogObject(key: string): Promise<void> {
-  if (isS3Configured() && env.s3Bucket) {
+  const bucket = publicImageBucket();
+  if (isPublicS3Configured() && bucket) {
+    const client = createS3Client();
+    try {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    } catch {
+      // Ignore cleanup errors; a missing object is already the desired end state.
+    }
+    return;
+  }
+  try {
+    await fs.unlink(getLocalCatalogPath(key));
+  } catch {
+    // Ignore cleanup errors for missing local files.
+  }
+}
+
+/** Public prefix for homepage hero images — deliberately separate from the private documents bucket. */
+const HERO_PREFIX = "public/hero";
+
+/**
+ * Stores a public hero-carousel image.
+ *
+ * In S3 mode the object goes to the PUBLIC `public/hero/` prefix with a long immutable
+ * cache header and a public URL. In local-disk mode it is written under the catalog root
+ * so the existing `/api/public/catalog/images/*` route can serve it without a new handler.
+ * Keys are random UUIDs so an uploaded name can never collide or traverse.
+ */
+export async function saveHeroObject(
+  originalName: string,
+  buffer: Buffer,
+  contentType: string,
+): Promise<{ key: string; url: string }> {
+  const key = `${HERO_PREFIX}/${crypto.randomUUID()}${catalogExtension(originalName)}`;
+
+  const bucket = publicImageBucket();
+  if (isPublicS3Configured() && bucket) {
+    const client = createS3Client();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        CacheControl: "public, max-age=31536000, immutable",
+      }),
+    );
+    return { key, url: `https://${bucket}.s3.${env.awsRegion}.amazonaws.com/${key}` };
+  }
+
+  const filePath = getLocalCatalogPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buffer);
+  return { key, url: `/api/public/catalog/images/${encodeURIComponent(key)}` };
+}
+
+/** Deletes a stored hero image from the public bucket (or local disk in fallback mode). */
+export async function removeHeroObject(key: string): Promise<void> {
+  const bucket = publicImageBucket();
+  if (isPublicS3Configured() && bucket) {
+    const client = createS3Client();
+    try {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    } catch {
+      // Ignore cleanup errors; a missing object is already the desired end state.
+    }
     return;
   }
   try {

@@ -70,6 +70,9 @@ export const publicService = {
       id: service.id,
       name: pickLocale(locale, service.nameEn, service.nameEs),
       description: pickLocale(locale, service.descriptionEn, service.descriptionEs),
+      imageUrl: service.imageUrl ?? null,
+      whatsIncluded: locale === "en" ? (service.whatsIncludedEn ?? []) : (service.whatsIncludedEs ?? []),
+      processSteps: locale === "en" ? (service.processStepsEn ?? []) : (service.processStepsEs ?? []),
       basePrice: numberValue(service.basePrice),
       category: service.category ? serializePublicCategory(service.category, locale) : null,
     }));

@@ -2,9 +2,10 @@ import { AppDataSource } from "../../config/database";
 import { AppSettingEntity } from "../../entities/app-setting.entity";
 import { IndustryEntity } from "../../entities/industry.entity";
 import { LocationEntity } from "../../entities/location.entity";
-import { ServiceEntity } from "../../entities/service.entity";
+import { ServiceEntity, type ServiceProcessStep } from "../../entities/service.entity";
 import { WorkerRangeEntity } from "../../entities/worker-range.entity";
 import { HttpError } from "../../utils/http-error";
+import { removeCatalogObject, saveCatalogObject } from "../../utils/s3";
 import { categoryService } from "../categories/category.service";
 
 // ─── small helper ────────────────────────────────────────────────────────────
@@ -24,6 +25,11 @@ function serializeService(s: ServiceEntity) {
     nameEs: s.nameEs,
     descriptionEn: s.descriptionEn ?? null,
     descriptionEs: s.descriptionEs ?? null,
+    imageUrl: s.imageUrl ?? null,
+    whatsIncludedEn: s.whatsIncludedEn ?? [],
+    whatsIncludedEs: s.whatsIncludedEs ?? [],
+    processStepsEn: s.processStepsEn ?? [],
+    processStepsEs: s.processStepsEs ?? [],
     basePrice: n(s.basePrice),
     isActive: s.isActive,
     categoryId: s.categoryId,
@@ -155,6 +161,10 @@ export interface ServiceInput {
   descriptionEn?: string | null;
   descriptionEs?: string | null;
   description?: string | null;
+  whatsIncludedEn?: string[];
+  whatsIncludedEs?: string[];
+  processStepsEn?: ServiceProcessStep[];
+  processStepsEs?: ServiceProcessStep[];
   basePrice: number;
   categoryId: string;
   isActive?: boolean;
@@ -167,6 +177,10 @@ export interface ServicePatch {
   descriptionEn?: string | null;
   descriptionEs?: string | null;
   description?: string | null;
+  whatsIncludedEn?: string[];
+  whatsIncludedEs?: string[];
+  processStepsEn?: ServiceProcessStep[];
+  processStepsEs?: ServiceProcessStep[];
   basePrice?: number;
   categoryId?: string;
   isActive?: boolean;
@@ -243,6 +257,10 @@ export const adminPricingService = {
       descriptionEn: input.descriptionEn ?? null,
       descriptionEs: input.descriptionEs ?? input.descriptionEn ?? null,
       description: input.description ?? null,
+      whatsIncludedEn: input.whatsIncludedEn ?? [],
+      whatsIncludedEs: input.whatsIncludedEs ?? [],
+      processStepsEn: input.processStepsEn ?? [],
+      processStepsEs: input.processStepsEs ?? [],
       basePrice: input.basePrice.toFixed(2),
       categoryId: input.categoryId,
       isActive: input.isActive ?? true,
@@ -264,6 +282,10 @@ export const adminPricingService = {
     if (patch.descriptionEn !== undefined) entity.descriptionEn = patch.descriptionEn ?? null;
     if (patch.descriptionEs !== undefined) entity.descriptionEs = patch.descriptionEs ?? null;
     if (patch.description !== undefined) entity.description = patch.description ?? null;
+    if (patch.whatsIncludedEn !== undefined) entity.whatsIncludedEn = patch.whatsIncludedEn;
+    if (patch.whatsIncludedEs !== undefined) entity.whatsIncludedEs = patch.whatsIncludedEs;
+    if (patch.processStepsEn !== undefined) entity.processStepsEn = patch.processStepsEn;
+    if (patch.processStepsEs !== undefined) entity.processStepsEs = patch.processStepsEs;
     if (patch.basePrice !== undefined) entity.basePrice = patch.basePrice.toFixed(2);
     if (patch.isActive !== undefined) entity.isActive = patch.isActive;
     const saved = await repo.save(entity);
@@ -272,6 +294,33 @@ export const adminPricingService = {
 
   async deactivateService(id: string) {
     return this.updateService(id, { isActive: false });
+  },
+
+  /**
+   * Stores a service's marketing image and deletes the previous object after the row is
+   * saved, so a failed save never orphans the live image. Mirrors `packageService.setImage`.
+   */
+  async setServiceImage(id: string, file: { buffer: Buffer; originalName: string; mimeType: string }) {
+    const repo = AppDataSource.getRepository(ServiceEntity);
+    const entity = await findServiceOr404(id);
+    const previousKey = entity.imageKey ?? null;
+    const { key, url } = await saveCatalogObject(entity.id, "service", file.originalName, file.buffer, file.mimeType, "main");
+    entity.imageUrl = url;
+    entity.imageKey = key;
+    await repo.save(entity);
+    if (previousKey && previousKey !== key) await removeCatalogObject(previousKey);
+    return serializeService(entity);
+  },
+
+  async removeServiceImage(id: string) {
+    const repo = AppDataSource.getRepository(ServiceEntity);
+    const entity = await findServiceOr404(id);
+    const previousKey = entity.imageKey ?? null;
+    entity.imageUrl = null;
+    entity.imageKey = null;
+    await repo.save(entity);
+    if (previousKey) await removeCatalogObject(previousKey);
+    return serializeService(entity);
   },
 
   // ── Industries ────────────────────────────────────────────────────────────

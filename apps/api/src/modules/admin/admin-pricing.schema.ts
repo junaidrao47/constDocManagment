@@ -2,6 +2,18 @@ import { z } from "zod";
 
 // --- Services ---
 
+// Structured "how it works after you buy" content shown on the public detail page.
+// A bullet list of what the customer gets, and numbered process steps.
+const WhatsIncludedSchema = z.array(z.string().trim().min(1).max(200)).max(20);
+const ProcessStepsSchema = z
+  .array(
+    z.object({
+      title: z.string().trim().min(1).max(150),
+      description: z.string().trim().max(500).default(""),
+    }),
+  )
+  .max(12);
+
 export const ServiceCreateSchema = z.object({
   name: z.string().trim().min(1).max(150),
   // Bilingual display copy. nameEn is required; nameEs defaults to nameEn in the
@@ -11,6 +23,10 @@ export const ServiceCreateSchema = z.object({
   descriptionEn: z.string().trim().max(2000).nullable().optional(),
   descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  whatsIncludedEn: WhatsIncludedSchema.optional(),
+  whatsIncludedEs: WhatsIncludedSchema.optional(),
+  processStepsEn: ProcessStepsSchema.optional(),
+  processStepsEs: ProcessStepsSchema.optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99),
   categoryId: z.string().uuid(),
   isActive: z.boolean().optional().default(true),
@@ -23,6 +39,10 @@ export const ServiceUpdateSchema = z.object({
   descriptionEn: z.string().trim().max(2000).nullable().optional(),
   descriptionEs: z.string().trim().max(2000).nullable().optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  whatsIncludedEn: WhatsIncludedSchema.optional(),
+  whatsIncludedEs: WhatsIncludedSchema.optional(),
+  processStepsEn: ProcessStepsSchema.optional(),
+  processStepsEs: ProcessStepsSchema.optional(),
   basePrice: z.coerce.number().finite().min(0).max(999_999_999.99).optional(),
   categoryId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),

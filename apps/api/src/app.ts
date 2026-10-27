@@ -28,6 +28,7 @@ import { env } from "./config/env";
 import { NextFunction, Request, Response } from "express";
 import { adminCatalogRouter, publicCatalogRouter } from "./modules/catalog/catalog.router";
 import { adminCategoryRouter } from "./modules/categories/category.router";
+import { adminCmsRouter, publicCmsRouter } from "./modules/cms/cms.router";
 
 const READINESS_TIMEOUT_MS = 2_000;
 
@@ -155,6 +156,7 @@ export function createApp() {
   app.use("/api/documents", authenticate, enforceAccountStatus(), documentRouter);
   app.use("/api/agent", authenticate, agentRouter);
   app.use("/api/public", publicRouter);
+  app.use("/api/public", publicCmsRouter);
   app.use("/api/public/catalog", publicCatalogRouter);
   // Public, unauthenticated, but every message is SNS-signature-verified in the router.
   app.use("/api/webhooks/ses", sesWebhookRouter);
@@ -165,6 +167,7 @@ export function createApp() {
   app.use("/api/admin", authenticate, authorize(UserRole.Admin), adminRouter);
   app.use("/api/admin/catalog", authenticate, authorize(UserRole.Admin), adminCatalogRouter);
   app.use("/api/admin/categories", authenticate, authorize(UserRole.Admin), adminCategoryRouter);
+  app.use("/api/admin/cms", authenticate, authorize(UserRole.Admin), adminCmsRouter);
   // Manager oversight: assignments. Admin is included deliberately — the RBAC matrix
   // gives both roles "assign customer to agent", and an admin locked out of this
   // could only fix a bad assignment with a database client.

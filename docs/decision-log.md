@@ -961,3 +961,85 @@ settings allowlist and discriminated-union validator in `admin-pricing.schema.ts
 - Verified: backend `typecheck` clean; `npm run smoke` = 48 passed / 0 failed / 2 pre-existing skips
   (no regression); live round-trip (admin PUT → `/public/site-config` → bar visible on the home page);
   invalid boolean rejected with 400. Both frontends `tsc` clean.
+
+## 2026-10-25 — Homepage CMS: hero carousel + editable content (backend, Phase 1)
+
+**Decision.** New `modules/cms` backend owning an admin-managed homepage hero carousel and
+bilingual editable site copy, plus CMS display settings.
+
+- **Schema (2 migrations, literal DDL):** `hero_slides` (`1940000000000`) — public image
+  (`image_key`/`image_url`), bilingual alt/headline/subheadline/CTA, `position`, `is_active`,
+  per-slide `duration_ms` (2000–15000), `transition` (fade|slide|zoom), `overlay_opacity` (0–0.8),
+  `focal_x/y` (0–100), optional `starts_at`/`ends_at` schedule, `updated_by`. `site_content` +
+  `site_content_history` (`1950000000000`) — one row per (`content_key`,`locale`), `status`
+  draft|published, `version`, optional font/weight/size-step style, append-only publish history.
+- **Settings reuse the existing `app_settings` KV**, under a `cms.` prefix (no migration), validated by
+  a Zod schema with fixed allow-lists from `docs/design-tokens.md` (heading/body fonts, text scale).
+- **Images:** public `public/hero/` S3 prefix via new `saveHeroObject` in `utils/s3` (never the private
+  documents bucket); jpeg/png/webp only, 8 MB cap, **magic-byte check** added (catalog lacked one).
+  Decision Q2/Q3 (2026-10-25): reuse the public-object pattern, serve the original with responsive
+  `next/image` on the portal; the `sharp` 640/1280/1920 AVIF/WebP worker is a documented fast-follow.
+- **Content safety:** a typed key **registry** (`content-registry.ts`) is the only source of editable
+  keys; writes to unknown keys are rejected. Values are **sanitized** (HTML tags + control chars
+  stripped) and length-capped per key; raw HTML is never stored. Publishing requires both locales.
+- **Revalidation:** on any CMS change the API fires a best-effort HMAC-SHA256-signed webhook to the
+  portal (`PORTAL_REVALIDATE_URL` + `CMS_REVALIDATE_SECRET`, both optional; skipped when unset).
+  CTA URLs are restricted to a site-relative path or absolute `https://` (protocol-relative `//host`
+  rejected — an open-redirect vector caught by the unit test).
+- **Verified:** `npm run typecheck`, `npm run typecheck:test`, `npm run build` clean; `npx jest
+  cms.test.ts` = 17/17 (registry/sanitize, CTA, settings, scheduling, HMAC). Full suite 253/254 — the
+  one failure (`document-scoping` manager visibility) is **pre-existing on the baseline** (reproduced
+  with changes stashed), not from this work. `npm run smoke` **NOT RUN** (needs the Docker/Postgres
+  stack up) — run `npm run db:migrate` + `npm run smoke` before deploy to prove persistence.
+- **Follow-ups / NOT DONE:** privacy-consent version storage at registration/onboarding is deferred to
+  avoid touching the auth flow before launch (privacy page + `privacy_policy_version` content key are
+  delivered); sharp image-variant worker.
+
+## 2026-10-26
+
+### Decision
+Serve public website images (homepage hero slides and service/package catalog images) from a
+dedicated **public** S3 bucket, configured via a new `S3_PUBLIC_BUCKET` env var, kept separate from
+the private documents bucket (`S3_BUCKET`). `saveHeroObject`, `saveCatalogObject` and their delete
+counterparts in `utils/s3.ts` now target the public bucket; documents and presigned-URL logic are
+untouched. When `S3_PUBLIC_BUCKET` is unset the helpers fall back to `S3_BUCKET`, preserving
+pre-change behaviour. Setup steps and the public-read bucket policy / CORS live in
+`docs/s3-public-bucket-setup.md`, `docs/s3-public-bucket-policy.json`, `docs/s3-public-bucket-cors.json`.
+
+### Why
+Hero and catalog images are rendered to anonymous visitors as plain `<img src>` URLs, which require
+the object to be publicly readable. The documents bucket is (correctly) private with Block Public
+Access on, so those image URLs returned 403 and images never displayed. Making the documents bucket
+public to fix this would expose confidential customer documents. A separate public-read bucket keeps
+documents locked down while letting website images load. Delete is now wired for the public bucket
+(it was a no-op in S3 mode) so removing a slide/image also removes the public object.
+
+### Result
+Documents stay private (presigned URLs only); website images load from a public bucket once
+`S3_PUBLIC_BUCKET` is set and the bucket is created with the documented policy. No behaviour change
+until that env var is set.
+
+## 2026-10-26 — SES bounce/complaint handling + email suppression list
+
+### Decision
+Add an SNS webhook (`POST /api/webhooks/ses`, public but SNS-signature-verified in
+`modules/email-events/sns.ts`) that records SES bounce/complaint recipients into a new
+`email_suppressions` table, and have the worker's email processor skip any recipient on that
+list before calling SES. New entity `EmailSuppressionEntity` + migration
+`1970000000000-EmailSuppressions`. No admin management UI (the email control panel stays
+DEFERRED per the 2026-10-20 decision); only the service + webhook + enforcement are built now.
+
+### Why
+Holding a suppression list and honouring bounces/complaints is a prerequisite for AWS granting
+SES production access (PROJECT-BRIEF §7.7), and mailing known-bad addresses damages sender
+reputation. The webhook is public, so every message is verified against the SNS signing
+certificate (host allowlisted to `sns.<region>.amazonaws.com`, signature checked) before it is
+trusted — otherwise anyone could POST a forged complaint to suppress an address. The worker is
+the single chokepoint every queued email passes through, so enforcement lives there; it fails
+open on a DB read error so a transient blip cannot halt all mail.
+
+### Result
+Forged/unsigned messages and non-AWS cert hosts are rejected (403); malformed bodies 400. Bounced
+and complained addresses are suppressed idempotently and never mailed again. `npm run smoke`
+stays green (48 passed, 0 failed). Admin visibility/management of the list is left for the
+deferred email control panel.

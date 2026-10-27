@@ -40,6 +40,10 @@ const EnvSchema = z
     // Optional: S3/SES features degrade gracefully when these are absent.
     awsRegion: z.string().min(1).optional(),
     s3Bucket: z.string().min(1).optional(),
+    // Separate PUBLIC bucket for website images (hero slides, catalog images). It is
+    // served to anonymous visitors as plain URLs, so it allows public read — kept apart
+    // from the private documents bucket above. Optional: falls back to s3Bucket when unset.
+    s3PublicBucket: z.string().min(1).optional(),
     s3BackupBucket: z.string().min(1).optional(),
 
     // Envelope sender for outgoing mail. Without it the email transport falls
@@ -50,6 +54,12 @@ const EnvSchema = z
     // Base URL of the browser app, used to build links inside emails such as the
     // password-reset link. Falls back to the first CORS origin when unset.
     webUrl: z.string().url().optional(),
+
+    // On-demand revalidation of the public site after a CMS change. The URL is the
+    // portal's revalidation endpoint; the secret signs the webhook (HMAC-SHA256) so only
+    // this API can trigger it. Both optional: when unset, CMS writes simply skip the ping.
+    portalRevalidateUrl: z.string().url().optional(),
+    cmsRevalidateSecret: z.string().min(16, "CMS_REVALIDATE_SECRET must be at least 16 characters").optional(),
   })
   .superRefine((value, ctx) => {
     if (value.nodeEnv !== "production") {
@@ -119,10 +129,13 @@ const parsed = EnvSchema.safeParse({
   jwtRefreshExpiresIn: optional(process.env.JWT_REFRESH_EXPIRES_IN),
   awsRegion: optional(process.env.AWS_REGION),
   s3Bucket: optional(process.env.S3_BUCKET),
+  s3PublicBucket: optional(process.env.S3_PUBLIC_BUCKET),
   s3BackupBucket: optional(process.env.S3_BACKUP_BUCKET),
   mailFrom: optional(process.env.MAIL_FROM),
   sesConfigurationSet: optional(process.env.SES_CONFIGURATION_SET),
   webUrl: optional(process.env.WEB_URL),
+  portalRevalidateUrl: optional(process.env.PORTAL_REVALIDATE_URL),
+  cmsRevalidateSecret: optional(process.env.CMS_REVALIDATE_SECRET),
 });
 
 if (!parsed.success) {
@@ -139,10 +152,13 @@ if (!parsed.success) {
     jwtRefreshExpiresIn: "JWT_REFRESH_EXPIRES_IN",
     awsRegion: "AWS_REGION",
     s3Bucket: "S3_BUCKET",
+    s3PublicBucket: "S3_PUBLIC_BUCKET",
     s3BackupBucket: "S3_BACKUP_BUCKET",
     mailFrom: "MAIL_FROM",
     sesConfigurationSet: "SES_CONFIGURATION_SET",
     webUrl: "WEB_URL",
+    portalRevalidateUrl: "PORTAL_REVALIDATE_URL",
+    cmsRevalidateSecret: "CMS_REVALIDATE_SECRET",
   };
 
   const details = parsed.error.issues

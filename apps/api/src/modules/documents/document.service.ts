@@ -6,6 +6,7 @@ import { assignmentService } from "../assignments/assignment.service";
 import { AppError, HttpError } from "../../utils/http-error";
 import {
   buildLocalDownloadUrl,
+  buildLocalVersionDownloadUrl,
   buildLocalUploadUrl,
   createDocumentStorageKey,
   createUploadPost,
@@ -776,7 +777,7 @@ export const documentService = {
 
     return {
       downloadMode: signedUrl ? "s3" : "local",
-      downloadUrl: signedUrl ?? `${buildLocalDownloadUrl(document.id)}/versions/${version.id}${options.inline ? "?inline=1" : ""}`,
+      downloadUrl: signedUrl ?? `${buildLocalVersionDownloadUrl(document.id, version.id)}${options.inline ? "?inline=1" : ""}`,
       version: serializeVersion(version),
     };
   },

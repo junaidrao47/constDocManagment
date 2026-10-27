@@ -322,3 +322,8 @@ export function buildLocalUploadUrl(documentId: string): string {
 export function buildLocalDownloadUrl(documentId: string): string {
   return `${getApiBaseUrl()}/api/documents/${documentId}/download`;
 }
+
+/** Local-mode URL that streams a specific version's bytes (route `/:id/versions/:versionId/download`). */
+export function buildLocalVersionDownloadUrl(documentId: string, versionId: string): string {
+  return `${getApiBaseUrl()}/api/documents/${documentId}/versions/${versionId}/download`;
+}

@@ -15,6 +15,9 @@ services:
       - "443:443"
     volumes:
       - ssl_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      # Bind-mounted so TLS config changes need only `nginx -s reload`, not an image rebuild.
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     restart: unless-stopped
     depends_on:
       api:
@@ -160,8 +163,18 @@ services:
       - redis_data:/data
       - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
+  # On-demand only (certbot profile), not started by `up`. Issue/renew with:
+  #   docker compose --profile certbot run --rm certbot certonly --webroot -w /var/www/certbot -d <hosts>
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - ssl_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+
 volumes:
   postgres_data:
   redis_data:
   api_storage:
   ssl_certs:
+  certbot_www:

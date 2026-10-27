@@ -168,6 +168,31 @@ export function seedAssignment(agentId: string, customerId: string, assignedBy: 
   return id;
 }
 
+/**
+ * Makes `managerId` the assigned manager of `customerId` (PROJECT-BRIEF §11.2).
+ *
+ * A manager's document and quotation queues are scoped to their assigned customers
+ * (the 2026-10-24 decision), so any test where a manager reaches a customer's
+ * records needs this in the fixture, the same way an agent needs `seedAssignment`.
+ */
+export function seedManagerAssignment(managerId: string, customerId: string, assignedBy: string | null = null): string {
+  const id = crypto.randomUUID();
+  const now = new Date();
+
+  fakeDb.customerManagerAssignments().seed({
+    id,
+    managerId,
+    customerId,
+    assignedBy,
+    note: null,
+    isDemo: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return id;
+}
+
 export function writeLocalDocument(s3Key: string, contents: string): string {
   const filePath = path.join(process.cwd(), "storage", "documents", s3Key);
 

@@ -9,6 +9,7 @@ import {
   resetTestState,
   seedAssignment,
   seedDocument,
+  seedManagerAssignment,
   seedUser,
   testApp,
   writeLocalDocument,
@@ -210,27 +211,44 @@ describe("an agent with no assignments at all", () => {
   });
 });
 
-describe("the narrowing does not touch the other roles", () => {
-  it("lets a manager see both customers' documents and quotations with no assignment", async () => {
+describe("managers are scoped to their assigned customers (PROJECT-BRIEF §11.2)", () => {
+  it("sees an assigned customer's documents and quotations, not an unassigned one's", async () => {
     const { assignedCustomer, strangerCustomer } = await twoCustomers();
     const manager = await seedUser({ role: UserRole.Manager, email: "manager.scope@test.com" });
+    seedManagerAssignment(manager.id, assignedCustomer.id);
     const mine = seedDocument(assignedCustomer.id, DocumentStatus.Pending);
     const theirs = seedDocument(strangerCustomer.id, DocumentStatus.Pending);
+    seedQuotation(assignedCustomer.id);
     seedQuotation(strangerCustomer.id);
     const token = bearer(mintToken(manager));
 
+    // The 2026-10-24 decisions added customer_manager_assignments and a "My customers"
+    // workspace, so a manager now narrows to their assigned customers (not org-wide).
     const documents = await request(testApp()).get("/api/agent/documents").set("Authorization", token);
     const ids = documents.body.data.map((row: { id: string }) => row.id);
     expect(ids).toContain(mine.id);
-    expect(ids).toContain(theirs.id);
-
-    // There is no team concept in the schema to narrow a manager against, so a
-    // manager stays organisation-wide by decision, not by oversight.
-    await request(testApp()).get(`/api/documents/${theirs.id}`).set("Authorization", token).expect(200);
+    expect(ids).not.toContain(theirs.id);
 
     const quotations = await request(testApp()).get("/api/agent/quotations").set("Authorization", token);
     expect(quotations.body.data).toHaveLength(1);
   });
+
+  it("with no assignment sees nothing, like an agent", async () => {
+    const { strangerCustomer } = await twoCustomers();
+    const manager = await seedUser({ role: UserRole.Manager, email: "manager.noassign@test.com" });
+    seedDocument(strangerCustomer.id, DocumentStatus.Pending);
+    seedQuotation(strangerCustomer.id);
+    const token = bearer(mintToken(manager));
+
+    const documents = await request(testApp()).get("/api/agent/documents").set("Authorization", token);
+    expect(documents.body.data).toEqual([]);
+
+    const quotations = await request(testApp()).get("/api/agent/quotations").set("Authorization", token);
+    expect(quotations.body.data).toEqual([]);
+  });
+});
+
+describe("the narrowing does not touch admin or customers", () => {
 
   it("leaves admin unrestricted", async () => {
     const { strangerCustomer } = await twoCustomers();
